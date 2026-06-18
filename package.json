@@ -1,7 +1,7 @@
 {
   "name": "@wazobiatech/helios-permissions",
-  "version": "0.2.0",
-  "description": "TypeScript SDK for the Nexus permission contract — Redis-cached callerHasPermission, NestJS module, and event-driven cache invalidation",
+  "version": "0.3.0",
+  "description": "TypeScript SDK for the Nexus permission contract — Redis-cached callerHasPermission, NestJS module, and event-driven cache invalidation. Role-permissions are codegen'd from wazobiatech/permission-contract.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -60,6 +60,9 @@
     "dist"
   ],
   "scripts": {
+    "codegen": "node scripts/codegen-permissions.mjs",
+    "prebuild": "yarn codegen",
+    "prepublishOnly": "yarn codegen && yarn build",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "jest",

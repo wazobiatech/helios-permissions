@@ -7,11 +7,12 @@
 
 | | |
 |---|---|
-| Version | **0.2.0** — HMAC-only auth model |
+| Version | **0.3.0** — codegen'd from `wazobiatech/permission-contract` |
 | Branch | `feature/ZIN-4901b--helios-permissions-sdk` |
 | Tests | 71 passing across 6 suites |
 | Build | `tsc` clean, dist/ generated |
 | Typecheck | `tsc --noEmit` clean |
+| Contract version | `permission-contract@v1.0.0` |
 
 ## What this SDK does
 
@@ -55,7 +56,7 @@ canonical name, matches Hecate's `SIGNATURE_SHARED_SECRET` env var).
 ```
 src/
   index.ts                            # Public API barrel
-  role-permissions.ts                 # Permission union + ROLE_PERMISSIONS map
+  role-permissions.ts                 # GENERATED — Permission union + ROLE_PERMISSIONS map (do not edit)
   permission-client.ts                # PermissionClient (hot-path authz)
   factory.ts                          # createPermissionClient() factory
   logger.ts                           # Logger protocol + silent/console defaults
@@ -70,6 +71,10 @@ src/
     index.ts
     fetch-user-permissions.ts         # HeliosClient (HMAC-signed GET)
   nestjs/                             # NestJS module + PERMISSION_CLIENT injection token
+scripts/
+  codegen-permissions.mjs             # Fetches contract, validates, runs codegen-ts
+  codegen-ts.mjs                      # Vendored from permission-contract
+  validate-contract.mjs               # Vendored from permission-contract
 tests/
   role-permissions.spec.ts            # ROLE_PERMISSIONS matrix
   in-memory-permission-cache.spec.ts  # Cache contract
@@ -78,6 +83,19 @@ tests/
   permission-client.spec.ts           # Hot path, fail-closed, coalescing
   helios-event.invalidator.spec.ts    # Event-driven cache invalidation
 ```
+
+## Permission contract source of truth (v0.3.0)
+
+The `Permission` union and `ROLE_PERMISSIONS` map are **codegen'd** from
+[`wazobiatech/permission-contract`](https://github.com/wazobiatech/permission-contract)
+(public mirror). To change the platform's role → permission matrix:
+
+1. Open a PR against `permission-contract` — edit `permissions.json`,
+   bump `version` (semver).
+2. Tag a release (`v1.1.0`, etc.).
+3. Open a PR against this SDK — bump `PERMISSION_CONTRACT_VERSION`
+   in `bitbucket-pipelines.yml`, update the contract version pin.
+4. CI runs `npm run codegen`, then `tsc --noEmit`, `eslint`, `jest`.
 
 ## Decisions locked
 
@@ -153,11 +171,12 @@ is implemented in helios as ZIN-4901e (`ServicePermissionsController`
 
 ## Out of scope (deferred)
 
-- **Permission contract repo** (`wazobiatech/permission-contract` —
-  language-agnostic JSON files mirrored from this map). The contract
-  ticket is ZIN-4901a. The SDK is structured so the JSON can replace the
-  hardcoded tuples in `role-permissions.ts` via codegen in v0.2.0.
-- **Python / Go / Laravel SDKs.** Mirror packages. Same API surface.
+- **Helios-side migration.** Helios still has its own copy of the
+  permission map at `helios/src/permissions/role-permissions.ts`. A
+  follow-up ticket will replace it with `import from
+  '@wazobiatech/helios-permissions'` (or a generated file). Not in
+  ZIN-4901a scope.
+- **Go / Laravel SDKs.** Mirror packages. Same API surface.
 - **Multi-instance Redis lock.** Use Redis-based SET NX EX for global
   coalescing when scaling beyond ~5 instances.
 - **Redis Sentinel / Cluster support.** v1 is single instance.
@@ -169,7 +188,9 @@ is implemented in helios as ZIN-4901e (`ServicePermissionsController`
 
 ```bash
 yarn install
-yarn lint                 # eslint clean (warnings only in pre-existing logger.ts)
+# Codegen requires network — fetches the contract from GitHub.
+PERMISSION_CONTRACT_VERSION=v1.0.0 yarn codegen
+yarn lint                 # eslint clean
 yarn typecheck            # tsc --noEmit clean
 yarn test                 # 71/71 pass
 yarn test:ci              # jest --ci --coverage --verbose

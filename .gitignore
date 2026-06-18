@@ -6,3 +6,9 @@ coverage/
 .env
 .env.local
 .env.*.local
+
+# Codegen cache — the fetched contract JSON, just for inspection.
+# The generated src/role-permissions.ts IS committed (so a fresh
+# checkout has a working tree); `yarn prebuild` re-runs codegen
+# as a safety check on every CI build.
+.contracts/

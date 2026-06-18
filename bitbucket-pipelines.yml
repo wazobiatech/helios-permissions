@@ -8,6 +8,11 @@ definitions:
           - node
         script:
           - npm ci
+          # Generate src/role-permissions.ts from the pinned
+          # permission-contract tag. Must run before typecheck/lint/test
+          # because the generated file is the source of truth for the
+          # closed Permission union.
+          - PERMISSION_CONTRACT_VERSION=v1.0.0 npm run codegen
           - npm run typecheck
           - npm run lint
           - npm run test:ci
