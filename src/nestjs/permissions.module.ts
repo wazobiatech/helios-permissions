@@ -6,8 +6,7 @@
 //     imports: [
 //       PermissionsModule.forRoot({
 //         heliosBaseUrl: process.env.HELIOS_BASE_URL!,
-//         heliosHmacSecret: process.env.HELIOS_HMAC_SECRET!,
-//         heliosProjectToken: process.env.HELIOS_PROJECT_TOKEN!,
+//         signatureSharedSecret: process.env.HELIOS_SIGNATURE_SHARED_SECRET!,
 //         redisUrl: process.env.PERMISSION_REDIS_URL!,
 //       }),
 //     ],

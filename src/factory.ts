@@ -8,6 +8,10 @@
 //
 // Caller injects the Redis connection (we don't own the connection
 // lifecycle) and the logger (NestJS's Logger satisfies the interface).
+//
+// Authentication (v0.2.0):
+//   - The Helios route is HMAC-only. `signatureSharedSecret` is the
+//     only auth surface (env var: `SIGNATURE_SHARED_SECRET`).
 // =============================================================================
 
 import Redis, { type Redis as RedisType } from 'ioredis';
@@ -25,10 +29,11 @@ import { silentLogger } from './types/logger';
 export interface CreatePermissionClientOptions {
   /** Helios base URL. e.g. `https://helios.internal` */
   heliosBaseUrl: string;
-  /** HMAC secret shared with Helios. */
-  heliosHmacSecret: string;
-  /** Project token for the platform/root tenant. */
-  heliosProjectToken: string;
+  /**
+   * HMAC secret shared with Helios. Canonical env var name is
+   * `SIGNATURE_SHARED_SECRET` (matches Hecate's convention).
+   */
+  signatureSharedSecret: string;
   /** Service name sent as x-source-service header. Default 'helios-permissions-sdk'. */
   heliosSourceService?: string;
   /** Redis connection URL. e.g. `redis://helios-permissions-redis:6379/0`. */
@@ -80,8 +85,7 @@ export function createPermissionClient(
 
   const helios = new HeliosClient({
     baseUrl: opts.heliosBaseUrl,
-    hmacSecret: opts.heliosHmacSecret,
-    projectToken: opts.heliosProjectToken,
+    signatureSharedSecret: opts.signatureSharedSecret,
     sourceService: opts.heliosSourceService,
     fetchTimeoutMs: opts.heliosFetchTimeoutMs,
   });

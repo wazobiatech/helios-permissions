@@ -1,11 +1,14 @@
 // =============================================================================
 // HeliosClient — HMAC-signed GET to Helios's permission endpoint.
 //
-// Helios exposes:
-//   GET /internal/users/:userId/permissions?tenantId=<uuid>
-//   Headers: x-project-token, x-source-service, x-signature, x-timestamp
-//   Window: 300 seconds (per Helios CLAUDE.md — 300s HMAC for the user
-//            endpoints, vs 30s for the events endpoint)
+// Helios exposes (v0.2.0):
+//   GET /internal/permissions/:userId?tenantId=<uuid>
+//   Headers: x-source-service, x-signature, x-timestamp
+//   Window: 300 seconds (per Helios CLAUDE.md)
+//
+// The route is HMAC-only — no Authorization header, no project token,
+// no user token. Knowing SIGNATURE_SHARED_SECRET is the entire auth
+// model. This is the SDK's outbound contract.
 //
 // Response shape (matches Helios's PermissionResolverService):
 //   { status: 'active', role: 'OWNER', permissions: ['helios:...', ...] }
@@ -23,23 +26,20 @@
 //
 // We implement the signing here directly (instead of pulling in
 // @wazobiatech/nexus-mcp) to keep the SDK's dependency surface minimal.
-// The signing logic is 10 lines of stdlib code; coupling to the HTTP
-// middleware library would be overkill for a single GET.
 // =============================================================================
 
 import { createHmac, randomUUID } from 'node:crypto';
 
 import type { Permission } from '../role-permissions';
 
-const HMAC_WINDOW_SECONDS = 300;
-
 export interface HeliosClientOptions {
   /** Base URL of the Helios service. e.g. `https://helios.internal` */
   baseUrl: string;
-  /** HMAC secret shared with Helios. */
-  hmacSecret: string;
-  /** Project token for the platform/root tenant. */
-  projectToken: string;
+  /**
+   * HMAC secret shared with Helios. Canonical env var name is
+   * `SIGNATURE_SHARED_SECRET` (matches Hecate's convention).
+   */
+  signatureSharedSecret: string;
   /** Service name to send as `x-source-service`. */
   sourceService?: string;
   /** Fetch timeout in ms. Default 2000. */
@@ -66,16 +66,18 @@ export class HeliosUnreachableError extends Error {
 
 export class HeliosClient {
   private readonly baseUrl: string;
-  private readonly hmacSecret: string;
-  private readonly projectToken: string;
+  private readonly signatureSharedSecret: string;
   private readonly sourceService: string;
   private readonly fetchTimeoutMs: number;
   private readonly fetchImpl: typeof fetch;
 
   constructor(opts: HeliosClientOptions) {
+    if (opts.signatureSharedSecret === undefined || opts.signatureSharedSecret === '') {
+      throw new Error('HeliosClient: signatureSharedSecret is required');
+    }
+
     this.baseUrl = opts.baseUrl.replace(/\/$/, '');
-    this.hmacSecret = opts.hmacSecret;
-    this.projectToken = opts.projectToken;
+    this.signatureSharedSecret = opts.signatureSharedSecret;
     this.sourceService = opts.sourceService ?? 'helios-permissions-sdk';
     this.fetchTimeoutMs = opts.fetchTimeoutMs ?? 2000;
     this.fetchImpl = opts.fetchImpl ?? fetch;
@@ -93,11 +95,19 @@ export class HeliosClient {
     userId: string,
     tenantId: string,
   ): Promise<HeliosMembershipResolution> {
-    const path = `/internal/users/${encodeURIComponent(userId)}/permissions?tenantId=${encodeURIComponent(tenantId)}`;
+    const path = `/internal/permissions/${encodeURIComponent(userId)}?tenantId=${encodeURIComponent(tenantId)}`;
     const url = `${this.baseUrl}${path}`;
     const timestamp = Math.floor(Date.now() / 1000).toString();
 
     const signature = this.sign('GET', path, timestamp);
+
+    const headers: Record<string, string> = {
+      'x-source-service': this.sourceService,
+      'x-signature': signature,
+      'x-timestamp': timestamp,
+      'x-correlation-id': randomUUID(),
+      accept: 'application/json',
+    };
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.fetchTimeoutMs);
@@ -106,14 +116,7 @@ export class HeliosClient {
     try {
       response = await this.fetchImpl(url, {
         method: 'GET',
-        headers: {
-          'x-project-token': this.projectToken,
-          'x-source-service': this.sourceService,
-          'x-signature': signature,
-          'x-timestamp': timestamp,
-          'x-correlation-id': randomUUID(),
-          accept: 'application/json',
-        },
+        headers,
         signal: controller.signal,
       });
     } catch (err) {
@@ -149,6 +152,8 @@ export class HeliosClient {
    */
   private sign(method: string, fullPath: string, timestamp: string): string {
     const payload = `${method.toUpperCase()}${fullPath}${timestamp}`;
-    return createHmac('sha256', this.hmacSecret).update(payload, 'utf8').digest('hex');
+    return createHmac('sha256', this.signatureSharedSecret)
+      .update(payload, 'utf8')
+      .digest('hex');
   }
 }

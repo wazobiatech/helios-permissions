@@ -11,39 +11,44 @@ import { createHmac } from 'node:crypto';
 
 import { HeliosClient, HeliosUnreachableError } from '../src/helios/fetch-user-permissions';
 
-describe('HeliosClient — HMAC signing', () => {
-  const SECRET = 'super-secret-key';
+const SECRET = 'super-secret-key';
 
+function makeClient(
+  response: Response,
+  opts: { secret?: string; baseUrl?: string; sourceService?: string } = {},
+): { client: HeliosClient; captured: { url: string; headers: Record<string, string> } } {
+  const captured = { url: '', headers: {} as Record<string, string> };
+  const mockFetch: typeof fetch = async (url, init) => {
+    captured.url = String(url);
+    captured.headers = (init?.headers as Record<string, string>) ?? {};
+    return response;
+  };
+  const client = new HeliosClient({
+    baseUrl: opts.baseUrl ?? 'https://helios.internal',
+    signatureSharedSecret: opts.secret ?? SECRET,
+    sourceService: opts.sourceService,
+    fetchImpl: mockFetch,
+  });
+  return { client, captured };
+}
+
+describe('HeliosClient — HMAC signing', () => {
   it('signs METHOD.upper() + path + timestamp with HMAC-SHA256, lowercase hex', async () => {
     // Capture the actual headers the SDK produces. Verify the signature
     // matches a recomputation using the same path + timestamp — this is
-    // what other SDKs (Python, Go) would also produce, byte-identical.
-    const captured: { url?: string; headers?: Record<string, string> } = {};
-    const mockFetch: typeof fetch = async (url, init) => {
-      captured.url = String(url);
-      captured.headers = init?.headers as Record<string, string>;
-      return new Response(
+    // what other SDKs (Python) would also produce, byte-identical.
+    const { client, captured } = makeClient(
+      new Response(
         JSON.stringify({ status: 'active', role: 'OWNER', permissions: ['helios:tenant:transfer'] }),
         { status: 200 },
-      );
-    };
-
-    const client = new HeliosClient({
-      baseUrl: 'https://helios.internal',
-      hmacSecret: SECRET,
-      projectToken: 'pt-1',
-      fetchImpl: mockFetch,
-    });
+      ),
+    );
 
     await client.fetchUserPermissions('u-1', 't-1');
 
-    const timestamp = captured.headers!['x-timestamp'];
-    const signature = captured.headers!['x-signature'];
-
-    // Reconstruct the signed payload from the URL the SDK sent.
-    // We re-derive the path the SDK signed by stripping the base URL.
-    const urlStr = captured.url!;
-    const signedPath = urlStr.replace('https://helios.internal', '');
+    const timestamp = captured.headers['x-timestamp'];
+    const signature = captured.headers['x-signature'];
+    const signedPath = captured.url.replace('https://helios.internal', '');
 
     const expected = createHmac('sha256', SECRET)
       .update(`GET${signedPath}${timestamp}`, 'utf8')
@@ -51,28 +56,46 @@ describe('HeliosClient — HMAC signing', () => {
 
     expect(signature).toBe(expected);
     expect(signature).toMatch(/^[0-9a-f]{64}$/); // lowercase hex, 64 chars (SHA-256)
-    expect(captured.headers!['x-source-service']).toBe('helios-permissions-sdk');
-    expect(captured.headers!['x-project-token']).toBe('pt-1');
-    expect(captured.headers!['x-correlation-id']).toBeDefined();
+  });
+
+  it('sends only HMAC headers — no Authorization, no project token, no x-tenant-id', async () => {
+    const { client, captured } = makeClient(
+      new Response(JSON.stringify({ status: 'not_a_member' }), { status: 200 }),
+    );
+    await client.fetchUserPermissions('u-1', 't-1');
+
+    expect(captured.headers['x-source-service']).toBe('helios-permissions-sdk');
+    expect(captured.headers['x-correlation-id']).toBeDefined();
+    expect(captured.headers).not.toHaveProperty('Authorization');
+    expect(captured.headers).not.toHaveProperty('x-project-token');
+    expect(captured.headers).not.toHaveProperty('x-tenant-id');
+  });
+
+  it('carries the tenant in the query string', async () => {
+    const { client, captured } = makeClient(
+      new Response(JSON.stringify({ status: 'not_a_member' }), { status: 200 }),
+    );
+    await client.fetchUserPermissions('u-1', 'tenant-xyz');
+    expect(captured.url).toContain('tenantId=tenant-xyz');
+  });
+
+  it('hits the HMAC-only route /internal/permissions/{userId}', async () => {
+    const { client, captured } = makeClient(
+      new Response(JSON.stringify({ status: 'not_a_member' }), { status: 200 }),
+    );
+    await client.fetchUserPermissions('u-1', 't-1');
+    expect(captured.url).toContain('/internal/permissions/u-1');
+  });
+
+  it('throws when signatureSharedSecret is missing', () => {
+    expect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      new HeliosClient({ baseUrl: 'https://helios.internal' } as any);
+    }).toThrow(/signatureSharedSecret/);
   });
 });
 
 describe('HeliosClient — response handling', () => {
-  function makeClient(response: Response): { client: HeliosClient; captured: { url: string } } {
-    const captured = { url: '' };
-    const mockFetch: typeof fetch = async (url) => {
-      captured.url = String(url);
-      return response;
-    };
-    const client = new HeliosClient({
-      baseUrl: 'https://helios.internal',
-      hmacSecret: 'secret',
-      projectToken: 'pt',
-      fetchImpl: mockFetch,
-    });
-    return { client, captured };
-  }
-
   it('translates 404 to not_a_member', async () => {
     const { client } = makeClient(new Response('', { status: 404 }));
     const result = await client.fetchUserPermissions('u-1', 't-1');
@@ -112,8 +135,7 @@ describe('HeliosClient — response handling', () => {
     };
     const client = new HeliosClient({
       baseUrl: 'https://helios.internal',
-      hmacSecret: 'secret',
-      projectToken: 'pt',
+      signatureSharedSecret: SECRET,
       fetchImpl: mockFetch,
     });
     await expect(client.fetchUserPermissions('u-1', 't-1')).rejects.toBeInstanceOf(HeliosUnreachableError);
