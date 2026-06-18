@@ -1,0 +1,42 @@
+image: node:20-slim
+
+definitions:
+  steps:
+    - step: &test
+        name: Build & Test
+        caches:
+          - node
+        script:
+          - npm ci
+          - npm run typecheck
+          - npm run lint
+          - npm run test:ci
+          - npm run build
+
+pipelines:
+  default:
+    - step: *test
+
+  branches:
+    main:
+      - step: *test
+
+  tags:
+    v*:
+      - step: *test
+      - step:
+          name: Assert tag matches package.json version
+          script:
+            - PKG_VERSION="v$(node -p "require('./package.json').version")"
+            - |
+              if [ "$PKG_VERSION" != "$BITBUCKET_TAG" ]; then
+                echo "Tag $BITBUCKET_TAG does not match package.json version $PKG_VERSION"
+                exit 1
+              fi
+            - echo "Tag $BITBUCKET_TAG matches package.json version"
+      - step:
+          name: Publish to npmjs.org (restricted)
+          deployment: production
+          script:
+            - npm set //registry.npmjs.org/:_authToken $NPM_TOKEN
+            - npm publish --access restricted
