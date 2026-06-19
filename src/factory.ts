@@ -88,6 +88,7 @@ export function createPermissionClient(
     signatureSharedSecret: opts.signatureSharedSecret,
     sourceService: opts.heliosSourceService,
     fetchTimeoutMs: opts.heliosFetchTimeoutMs,
+    logger,
   });
 
   const clientOptions: PermissionClientOptions = {

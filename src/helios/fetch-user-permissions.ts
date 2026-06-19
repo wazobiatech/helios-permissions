@@ -19,10 +19,22 @@
 // or inactive memberships — the service-layer callerHasPermission then
 // returns false for any perm against an empty array).
 //
-// HMAC payload (per wazobiatech/nexus-mcp-contract):
-//   payload = METHOD.upper() + fullPath + timestamp
+// HMAC payload:
+//   payload = method + path + timestamp
 //   digest  = HMAC-SHA256(secret_utf8, payload_utf8), lowercase hex
 //   reject if |now - timestamp| > 300s
+//
+// Where:
+//   - `method` is the lowercase HTTP method (matches Helios's
+//     hmac.ts verifier, which uses `req.method` from Express — lowercase).
+//   - `path` is the URL path WITHOUT the query string (matches
+//     `req.path` in Express, which strips the query string).
+//
+// Note: this deviates from the canonical nexus-mcp contract
+// (METHOD.toUpperCase() + fullPath including query string). The
+// deviation is forced by Helios's existing verifier at
+// helios/src/internal/hmac.ts. If Helios is fixed to use the
+// canonical contract, this can be reverted.
 //
 // We implement the signing here directly (instead of pulling in
 // @wazobiatech/nexus-mcp) to keep the SDK's dependency surface minimal.
@@ -31,6 +43,8 @@
 import { createHmac, randomUUID } from 'node:crypto';
 
 import type { Permission } from '../role-permissions';
+import type { Logger } from '../types/logger';
+import { silentLogger } from '../types/logger';
 
 export interface HeliosClientOptions {
   /** Base URL of the Helios service. e.g. `https://helios.internal` */
@@ -46,6 +60,8 @@ export interface HeliosClientOptions {
   fetchTimeoutMs?: number;
   /** Optional fetch impl injection for tests. */
   fetchImpl?: typeof fetch;
+  /** Optional logger for diagnostics. Defaults to silent. */
+  logger?: Logger;
 }
 
 export type HeliosMembershipResolution =
@@ -70,6 +86,7 @@ export class HeliosClient {
   private readonly sourceService: string;
   private readonly fetchTimeoutMs: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly logger: Logger;
 
   constructor(opts: HeliosClientOptions) {
     if (opts.signatureSharedSecret === undefined || opts.signatureSharedSecret === '') {
@@ -81,6 +98,7 @@ export class HeliosClient {
     this.sourceService = opts.sourceService ?? 'helios-permissions-sdk';
     this.fetchTimeoutMs = opts.fetchTimeoutMs ?? 2000;
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.logger = opts.logger ?? silentLogger;
   }
 
   /**
@@ -99,7 +117,12 @@ export class HeliosClient {
     const url = `${this.baseUrl}${path}`;
     const timestamp = Math.floor(Date.now() / 1000).toString();
 
-    const signature = this.sign('GET', path, timestamp);
+    // Sign the path WITHOUT the query string — Helios's
+    // hmac.ts verifier signs `req.method + req.path` (Express's
+    // req.path strips the query string). Mismatching the path would
+    // produce a signature rejection on every call.
+    const signPath = path.split('?')[0] ?? path;
+    const signature = this.sign('GET', signPath, timestamp);
 
     const headers: Record<string, string> = {
       'x-source-service': this.sourceService,
@@ -108,6 +131,18 @@ export class HeliosClient {
       'x-correlation-id': randomUUID(),
       accept: 'application/json',
     };
+
+    this.logger.debug(
+      {
+        url,
+        method: 'GET',
+        signedPath: signPath,
+        timestamp,
+        signature,
+        sourceService: this.sourceService,
+      },
+      'HeliosClient.fetchUserPermissions: sending request',
+    );
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.fetchTimeoutMs);
@@ -120,6 +155,10 @@ export class HeliosClient {
         signal: controller.signal,
       });
     } catch (err) {
+      this.logger.error(
+        { err, userId, tenantId, url },
+        'HeliosClient.fetchUserPermissions: network error',
+      );
       throw new HeliosUnreachableError(
         `HeliosClient.fetchUserPermissions: network error for (${userId}, ${tenantId})`,
         err,
@@ -128,12 +167,30 @@ export class HeliosClient {
       clearTimeout(timeoutId);
     }
 
+    this.logger.debug(
+      {
+        userId,
+        tenantId,
+        status: response.status,
+        statusText: response.statusText,
+      },
+      'HeliosClient.fetchUserPermissions: received response',
+    );
+
     if (response.status === 404) {
       // 404 means the row doesn't exist — treat as not_a_member.
+      this.logger.debug(
+        { userId, tenantId },
+        'HeliosClient.fetchUserPermissions: 404, treating as not_a_member',
+      );
       return { status: 'not_a_member' };
     }
 
     if (!response.ok) {
+      this.logger.error(
+        { userId, tenantId, status: response.status },
+        'HeliosClient.fetchUserPermissions: non-2xx response',
+      );
       throw new HeliosUnreachableError(
         `HeliosClient.fetchUserPermissions: HTTP ${response.status} for (${userId}, ${tenantId})`,
         null,
@@ -141,17 +198,29 @@ export class HeliosClient {
     }
 
     const body = (await response.json()) as HeliosMembershipResolution;
+    this.logger.debug(
+      { userId, tenantId, body },
+      'HeliosClient.fetchUserPermissions: response body',
+    );
     return body;
   }
 
   /**
-   * Compute the HMAC-SHA256 signature per the contract.
+   * Compute the HMAC-SHA256 signature.
    *
-   * Payload: METHOD.upper() + fullPath + timestamp (fullPath includes
-   * query string). Lowercase hex output.
+   * Payload: method + path + timestamp. The path is the URL path
+   * WITHOUT the query string (matching Helios's hmac.ts verifier,
+   * which signs `req.method + req.path`). The method is sent in
+   * its original case (the verifier uses `req.method`, which Express
+   * provides lowercase).
+   *
+   * Note: this deviates from the canonical nexus-mcp contract
+   * (METHOD.toUpperCase() + fullPath including query string).
+   * The deviation is forced by Helios's existing verifier — fixing
+   * Helios to the canonical contract would let us switch back.
    */
-  private sign(method: string, fullPath: string, timestamp: string): string {
-    const payload = `${method.toUpperCase()}${fullPath}${timestamp}`;
+  private sign(method: string, path: string, timestamp: string): string {
+    const payload = `${method}${path}${timestamp}`;
     return createHmac('sha256', this.signatureSharedSecret)
       .update(payload, 'utf8')
       .digest('hex');
