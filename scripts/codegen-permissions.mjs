@@ -75,22 +75,59 @@ function validateContractInMemory(contract) {
     fail('contract missing role_permissions{}');
   }
 
-  const flat = new Set();
-  for (const perms of Object.values(contract.permissions)) {
-    for (const p of perms) flat.add(p);
+  const VALID_SCOPES = new Set(['self', 'platform', 'project', 'platform/project']);
+  const flat = new Map(); // name → { service, scope }
+  for (const [service, perms] of Object.entries(contract.permissions)) {
+    if (!Array.isArray(perms)) fail(`permissions[${service}] is not an array`);
+    for (const p of perms) {
+      if (typeof p === 'string') {
+        fail(`permissions[${service}] contains a bare string perm "${p}" — v1.3.0 requires {name, scope} objects`);
+      }
+      if (!p || typeof p !== 'object') {
+        fail(`permissions[${service}] contains a non-object perm: ${JSON.stringify(p)}`);
+      }
+      if (typeof p.name !== 'string' || !p.name) {
+        fail(`permissions[${service}] has a perm with missing/invalid name: ${JSON.stringify(p)}`);
+      }
+      if (!VALID_SCOPES.has(p.scope)) {
+        fail(`perm "${p.name}" has invalid scope "${p.scope}" (must be one of: ${[...VALID_SCOPES].join(', ')})`);
+      }
+      if (p.scope === 'self' && !p.name.endsWith(':self')) {
+        fail(`perm "${p.name}" has scope "self" but is missing the ":self" suffix`);
+      }
+      if (p.name.endsWith(':self') && p.scope !== 'self') {
+        fail(`perm "${p.name}" ends with ":self" but scope is "${p.scope}" (must be "self")`);
+      }
+      flat.set(p.name, { service, scope: p.scope });
+    }
   }
+
   for (const [role, def] of Object.entries(contract.role_permissions)) {
-    for (const perm of def.permissions) {
-      if (!flat.has(perm)) {
+    const rolePerms = def.permissions || [];
+    for (const perm of rolePerms) {
+      const info = flat.get(perm);
+      if (!info) {
         fail(`role "${role}" references unknown perm "${perm}"`);
       }
+      if (info.scope === 'self') {
+        fail(`role "${role}" contains self-scope perm "${perm}" — self perms are universal and must not be in any role`);
+      }
+      if (info.scope === 'project') {
+        fail(`role "${role}" contains project-scope perm "${perm}" — project perms are tenant-user only and must not be in any role`);
+      }
     }
-    if (!def.permissions.includes('helios:tenant:switch')) {
-      fail(`role "${role}" missing universal perm helios:tenant:switch`);
-    }
-    if (role !== 'OWNER' && def.permissions.includes('helios:tenant:transfer')) {
+    if (role !== 'OWNER' && rolePerms.includes('helios:tenant:transfer')) {
       fail(`role "${role}" has OWNER-only perm helios:tenant:transfer`);
     }
+  }
+
+  // helios:tenant:switch:self must be present and have scope "self"
+  const SWITCH = 'helios:tenant:switch:self';
+  const switchInfo = flat.get(SWITCH);
+  if (!switchInfo) {
+    fail(`required perm "${SWITCH}" is missing from permissions[service]`);
+  } else if (switchInfo.scope !== 'self') {
+    fail(`perm "${SWITCH}" must have scope "self" (universal perm), got "${switchInfo.scope}"`);
   }
 }
 

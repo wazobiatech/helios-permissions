@@ -19,14 +19,32 @@
 // =============================================================================
 
 export {
+  // Closed role → permission map and helpers
   ROLE_PERMISSIONS,
   ROLES,
   resolvePermissions,
   roleHasPermission,
   isPermission,
   isRole,
+  // v1.3.0 — perm scope lookup and helpers
+  PERM_SCOPE,
+  SELF_PERMISSIONS,
+  PLATFORM_PERMISSIONS,
+  PROJECT_PERMISSIONS,
+  DUAL_PERMISSIONS,
+  isSelfScope,
+  isPlatformGrantable,
+  isTenantGrantable,
 } from './role-permissions';
-export type { Permission, Role } from './role-permissions';
+export type {
+  Permission,
+  Role,
+  SelfPermission,
+  PlatformPermission,
+  ProjectPermission,
+  DualPermission,
+  PermScope,
+} from './role-permissions';
 
 export { PermissionClient } from './permission-client';
 export type {

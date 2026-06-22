@@ -3,6 +3,12 @@
 //
 // No mocks. These are the most important tests in the SDK — every other
 // service depends on this map being correct.
+//
+// v1.3.0: perms are partitioned by `scope` (self / platform / project /
+// platform/project). SELF perms are universal (granted by the resolver's
+// Step 1, not in any role). PROJECT perms are tenant-user only (granted
+// via TenantRole, not in any role). Only PLATFORM and PLATFORM/PROJECT
+// perms appear in ROLE_PERMISSIONS.
 // =============================================================================
 
 import {
@@ -12,19 +18,31 @@ import {
   roleHasPermission,
   isPermission,
   isRole,
+  isSelfScope,
+  isPlatformGrantable,
+  isTenantGrantable,
+  PERM_SCOPE,
+  SELF_PERMISSIONS,
+  PLATFORM_PERMISSIONS,
+  PROJECT_PERMISSIONS,
+  DUAL_PERMISSIONS,
   type Permission,
   type Role,
+  type PermScope,
 } from '../src/role-permissions';
 
 describe('ROLE_PERMISSIONS', () => {
-  it('grants OWNER every permission in every service', () => {
+  it('grants OWNER every platform + dual-scope perm in the contract', () => {
     const ownerPerms = ROLE_PERMISSIONS.OWNER;
+    // Platform-scope perms
     expect(ownerPerms).toContain('athens:project:delete');
     expect(ownerPerms).toContain('athens:services:enable');
     expect(ownerPerms).toContain('mercury:users:write');
     expect(ownerPerms).toContain('mercury:api_keys:manage');
-    expect(ownerPerms).toContain('muse:posts:delete');
+    expect(ownerPerms).toContain('muse:author:delete');
     expect(ownerPerms).toContain('helios:tenant:transfer');
+    // Dual-scope perms (valid in platform-user path too)
+    expect(ownerPerms).toContain('muse:author:read');
   });
 
   it('grants ADMIN everything except destructive deletes and ownership transfer', () => {
@@ -32,19 +50,18 @@ describe('ROLE_PERMISSIONS', () => {
     expect(adminPerms).toContain('athens:project:update');
     expect(adminPerms).toContain('athens:project:view');
     expect(adminPerms).not.toContain('athens:project:delete');
-    expect(adminPerms).toContain('muse:posts:write');
-    expect(adminPerms).not.toContain('muse:posts:delete');
+    expect(adminPerms).toContain('muse:blog:create');
+    expect(adminPerms).toContain('muse:author:create');
+    expect(adminPerms).not.toContain('muse:author:delete');
     expect(adminPerms).not.toContain('helios:tenant:transfer');
-    // Switch is a navigation gesture, available to every role.
-    expect(adminPerms).toContain('helios:tenant:switch');
   });
 
-  it('grants EDITOR read+write on content services, no team mgmt', () => {
+  it('grants EDITOR platform-user read/write on content services, no team mgmt', () => {
     const editorPerms = ROLE_PERMISSIONS.EDITOR;
-    expect(editorPerms).toContain('muse:posts:read');
-    expect(editorPerms).toContain('muse:posts:write');
-    expect(editorPerms).toContain('muse:drafts:write');
-    expect(editorPerms).not.toContain('muse:posts:delete');
+    expect(editorPerms).toContain('muse:blog:create');
+    expect(editorPerms).toContain('muse:blog:read');
+    expect(editorPerms).toContain('muse:author:create');
+    expect(editorPerms).not.toContain('muse:author:delete');
     expect(editorPerms).not.toContain('athens:project:update');
     expect(editorPerms).not.toContain('helios:members:invite');
     expect(editorPerms).not.toContain('helios:tenant:transfer');
@@ -54,11 +71,28 @@ describe('ROLE_PERMISSIONS', () => {
     const viewerPerms = ROLE_PERMISSIONS.VIEWER;
     expect(viewerPerms).toContain('athens:project:view');
     expect(viewerPerms).toContain('mercury:users:read');
-    expect(viewerPerms).toContain('muse:posts:read');
-    expect(viewerPerms).not.toContain('muse:posts:write');
-    expect(viewerPerms).not.toContain('muse:drafts:write');
+    expect(viewerPerms).toContain('muse:blog:read');
+    expect(viewerPerms).toContain('muse:author:read');
+    expect(viewerPerms).not.toContain('muse:blog:create');
+    expect(viewerPerms).not.toContain('muse:author:create');
     expect(viewerPerms).not.toContain('mercury:users:write');
     expect(viewerPerms).not.toContain('helios:members:invite');
+  });
+
+  it('never includes self-scope perms (universal — granted by resolver Step 1)', () => {
+    for (const role of ROLES) {
+      for (const perm of ROLE_PERMISSIONS[role]) {
+        expect(isSelfScope(perm as Permission)).toBe(false);
+      }
+    }
+  });
+
+  it('never includes project-scope perms (tenant-user — granted via TenantRole)', () => {
+    for (const role of ROLES) {
+      for (const perm of ROLE_PERMISSIONS[role]) {
+        expect(PERM_SCOPE[perm as Permission]).not.toBe('project');
+      }
+    }
   });
 
   it('includes every role in the Record (compile-time guard, runtime check)', () => {
@@ -99,7 +133,7 @@ describe('roleHasPermission', () => {
 
   it('returns false when role lacks perm', () => {
     expect(roleHasPermission('VIEWER', 'helios:tenant:transfer')).toBe(false);
-    expect(roleHasPermission('EDITOR', 'muse:posts:delete')).toBe(false);
+    expect(roleHasPermission('EDITOR', 'muse:author:delete')).toBe(false);
   });
 });
 
@@ -107,6 +141,8 @@ describe('isPermission', () => {
   it('accepts valid perm strings', () => {
     expect(isPermission('helios:members:view')).toBe(true);
     expect(isPermission('athens:project:delete')).toBe(true);
+    expect(isPermission('helios:tenant:switch:self')).toBe(true); // self-scope
+    expect(isPermission('muse:posts:read')).toBe(true); // project-scope
   });
 
   it('rejects invalid strings', () => {
@@ -146,5 +182,145 @@ describe('Permission union exhaustiveness', () => {
       const perms = ROLE_PERMISSIONS[role as Role];
       expect(perms.length).toBeGreaterThan(0);
     }
+  });
+});
+
+// =============================================================================
+// v1.3.0 — 4-scope model
+// =============================================================================
+
+describe('PERM_SCOPE (v1.3.0)', () => {
+  it('contains every perm in the contract vocabulary', () => {
+    // The contract has 32 perms (3 self + 22 platform + 5 project + 1 dual
+    // = 31 as of v1.3.0; see permissions.json). Every one of them MUST
+    // appear in PERM_SCOPE.
+    expect(PERM_SCOPE['helios:tenant:switch:self']).toBe('self');
+    expect(PERM_SCOPE['mercury:user:read:self']).toBe('self');
+    expect(PERM_SCOPE['mercury:user:write:self']).toBe('self');
+
+    expect(PERM_SCOPE['athens:project:view']).toBe('platform');
+    expect(PERM_SCOPE['helios:tenant:transfer']).toBe('platform');
+
+    expect(PERM_SCOPE['muse:posts:read']).toBe('project');
+    expect(PERM_SCOPE['muse:drafts:write']).toBe('project');
+
+    expect(PERM_SCOPE['muse:author:read']).toBe('platform/project');
+  });
+
+  it('has 4 valid scope values (one of: self, platform, project, platform/project)', () => {
+    const valid: PermScope[] = ['self', 'platform', 'project', 'platform/project'];
+    for (const scope of Object.values(PERM_SCOPE)) {
+      expect(valid).toContain(scope);
+    }
+  });
+});
+
+describe('scope-partitioned tuples (v1.3.0)', () => {
+  it('SELF_PERMISSIONS only contains self-scope perms', () => {
+    for (const p of SELF_PERMISSIONS) {
+      expect(PERM_SCOPE[p as Permission]).toBe('self');
+    }
+    expect(SELF_PERMISSIONS).toContain('helios:tenant:switch:self');
+    expect(SELF_PERMISSIONS).toContain('mercury:user:read:self');
+  });
+
+  it('PLATFORM_PERMISSIONS only contains platform-scope perms', () => {
+    for (const p of PLATFORM_PERMISSIONS) {
+      expect(PERM_SCOPE[p as Permission]).toBe('platform');
+    }
+  });
+
+  it('PROJECT_PERMISSIONS only contains project-scope perms', () => {
+    for (const p of PROJECT_PERMISSIONS) {
+      expect(PERM_SCOPE[p as Permission]).toBe('project');
+    }
+    expect(PROJECT_PERMISSIONS).toContain('muse:posts:read');
+    expect(PROJECT_PERMISSIONS).toContain('muse:drafts:write');
+  });
+
+  it('DUAL_PERMISSIONS only contains platform/project-scope perms', () => {
+    for (const p of DUAL_PERMISSIONS) {
+      expect(PERM_SCOPE[p as Permission]).toBe('platform/project');
+    }
+  });
+
+  it('every contract perm appears in exactly one tuple (union covers the vocabulary)', () => {
+    const allFromTuples = new Set<Permission>([
+      ...SELF_PERMISSIONS,
+      ...PLATFORM_PERMISSIONS,
+      ...PROJECT_PERMISSIONS,
+      ...DUAL_PERMISSIONS,
+    ]);
+    // Every key in PERM_SCOPE is in the tuple union.
+    for (const name of Object.keys(PERM_SCOPE) as Permission[]) {
+      expect(allFromTuples.has(name)).toBe(true);
+    }
+    // And no name is duplicated across tuples.
+    const seen = new Set<Permission>();
+    for (const p of allFromTuples) {
+      expect(seen.has(p)).toBe(false);
+      seen.add(p);
+    }
+  });
+});
+
+describe('isSelfScope', () => {
+  it('returns true for self-scope perms', () => {
+    expect(isSelfScope('helios:tenant:switch:self' as Permission)).toBe(true);
+    expect(isSelfScope('mercury:user:read:self' as Permission)).toBe(true);
+  });
+
+  it('returns false for non-self-scope perms', () => {
+    expect(isSelfScope('athens:project:view' as Permission)).toBe(false);
+    expect(isSelfScope('muse:posts:read' as Permission)).toBe(false);
+    expect(isSelfScope('muse:author:read' as Permission)).toBe(false);
+  });
+});
+
+describe('isPlatformGrantable', () => {
+  it('returns true for platform-scope perms', () => {
+    expect(isPlatformGrantable('athens:project:view' as Permission)).toBe(true);
+    expect(isPlatformGrantable('helios:tenant:transfer' as Permission)).toBe(true);
+  });
+
+  it('returns true for platform/project (dual) perms', () => {
+    expect(isPlatformGrantable('muse:author:read' as Permission)).toBe(true);
+  });
+
+  it('returns false for self-scope perms (universal — not via ROLE_PERMISSIONS)', () => {
+    expect(isPlatformGrantable('helios:tenant:switch:self' as Permission)).toBe(false);
+    expect(isPlatformGrantable('mercury:user:read:self' as Permission)).toBe(false);
+  });
+
+  it('returns false for project-scope perms (tenant-user only)', () => {
+    expect(isPlatformGrantable('muse:posts:read' as Permission)).toBe(false);
+    expect(isPlatformGrantable('muse:drafts:write' as Permission)).toBe(false);
+  });
+});
+
+describe('isTenantGrantable', () => {
+  it('returns true for project-scope perms', () => {
+    expect(isTenantGrantable('muse:posts:read' as Permission)).toBe(true);
+    expect(isTenantGrantable('muse:posts:delete' as Permission)).toBe(true);
+  });
+
+  it('returns true for platform/project (dual) perms', () => {
+    expect(isTenantGrantable('muse:author:read' as Permission)).toBe(true);
+  });
+
+  it('returns false for self-scope perms (universal — not via TenantRole)', () => {
+    expect(isTenantGrantable('helios:tenant:switch:self' as Permission)).toBe(false);
+  });
+
+  it('returns false for platform-only perms (not grantable via TenantRole)', () => {
+    expect(isTenantGrantable('athens:project:view' as Permission)).toBe(false);
+    expect(isTenantGrantable('helios:tenant:transfer' as Permission)).toBe(false);
+  });
+
+  it('returns true for unknown perms (tenant-defined — default to tenant grantable)', () => {
+    // Tenant-defined perms (e.g. `inventory:items:read`) are not in the
+    // contract vocabulary. The resolver treats them as tenant-user-only.
+    expect(isTenantGrantable('inventory:items:read')).toBe(true);
+    expect(isTenantGrantable('custom_tenant_perm:foo:bar')).toBe(true);
   });
 });
