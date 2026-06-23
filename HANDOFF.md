@@ -7,12 +7,12 @@
 
 | | |
 |---|---|
-| Version | **0.3.0** — codegen'd from `wazobiatech/permission-contract` |
+| Version | **0.5.0** — no-expiry cache default; codegen'd from `wazobiatech/permission-contract` |
 | Branch | `feature/ZIN-4901b--helios-permissions-sdk` |
-| Tests | 71 passing across 6 suites |
+| Tests | 75 passing on the 4 SDK-covered suites (role-permissions, redis-cache, in-memory-cache, permission-client). Plus 10 passing on helios-client.spec.ts (1 pre-existing HMAC test failure on `main`, unrelated to v0.5.0). Plus 11 passing on the helios-event.invalidator.spec.ts (broken pre-existing peer-dep issue: `rxjs/operators` not installed, unrelated to v0.5.0). |
 | Build | `tsc` clean, dist/ generated |
 | Typecheck | `tsc --noEmit` clean |
-| Contract version | `permission-contract@v1.0.0` |
+| Contract version | `permission-contract@v1.4.0` (4-scope permission model + `helios:external:*` perms for Use case 2) |
 
 ## What this SDK does
 
@@ -84,7 +84,7 @@ tests/
   helios-event.invalidator.spec.ts    # Event-driven cache invalidation
 ```
 
-## Permission contract source of truth (v0.3.0)
+## Permission contract source of truth (v0.3.0+)
 
 The `Permission` union and `ROLE_PERMISSIONS` map are **codegen'd** from
 [`wazobiatech/permission-contract`](https://github.com/wazobiatech/permission-contract)
@@ -92,10 +92,17 @@ The `Permission` union and `ROLE_PERMISSIONS` map are **codegen'd** from
 
 1. Open a PR against `permission-contract` — edit `permissions.json`,
    bump `version` (semver).
-2. Tag a release (`v1.1.0`, etc.).
+2. Tag a release (`v1.4.0`, etc.).
 3. Open a PR against this SDK — bump `PERMISSION_CONTRACT_VERSION`
-   in `bitbucket-pipelines.yml`, update the contract version pin.
+   in `bitbucket-pipelines.yml` and the default in
+   `scripts/codegen-permissions.mjs` (both must match).
 4. CI runs `npm run codegen`, then `tsc --noEmit`, `eslint`, `jest`.
+
+Currently pinned to `permission-contract@v1.4.0`, which adds three
+`helios:external:*` permissions (register / revoke / view) for the
+Use case 2 ("tenant brings their own auth") flow. `register` and
+`revoke` are OWNER-only per the contract's `owner_only_permissions`
+invariant; `view` is OWNER+ADMIN.
 
 ## Decisions locked
 
@@ -121,10 +128,48 @@ The `Permission` union and `ROLE_PERMISSIONS` map are **codegen'd** from
 | Op | Behavior |
 |---|---|
 | `get(userId, tenantId)` | Redis GET. On miss → `undefined`. On error → log warn + `undefined` (fall-through). |
-| `set(...)` | `SET ... NX EX 60`. Stale-populate race protection. On error → log warn + swallow. |
-| `writeThrough(...)` | `SET ... EX 60` (no NX). Used by Helios after a role change. |
+| `set(...)` | `SET ... NX` (no EX by default). Stale-populate race protection. On error → log warn + swallow. |
+| `writeThrough(...)` | `SET ...` (no NX, no EX by default). Used by Helios after a role change. |
 | `invalidate(userId, tenantId?)` | `DEL` (specific) or `SCAN MATCH ... \| DEL` (all). On error → log error + throw. |
 | `invalidateTenant(tenantId)` | `SCAN MATCH helios:perms:*:{tenantId} \| DEL`. On error → throw. |
+
+### TTL policy (v0.5.0 — no expiry by default)
+
+The cache is the primary read path for `callerHasPermission`. The
+platform targets a 90-98% cache hit rate, which means entries must
+outlive the request burst. Every entry is invalidated explicitly at
+the mutation site — Helios calls `writeThrough` / `invalidate` after
+every role change, Hecate's event consumer drops the key on `helios.*`
+events, and the internal events handlers (`athens.project.*`,
+`athens.service.update`, `mercury.user.deleted`,
+`helios.invitation.accepted`) invalidate the tenant-level cache after
+each event. A 60s safety-net TTL would just be wasted work — entries
+the next read would re-populate anyway, forcing an unnecessary
+round-trip to Helios.
+
+v0.4.0 shipped with a 60s default TTL. v0.5.0 removed it. **This is a
+behavioral change for consumers**: if you relied on the implicit 60s
+TTL, you now get no expiry. To opt back in, pass `cacheTtlSeconds: 60`
+to `createPermissionClient` (or `ttlSeconds: 60` directly to
+`RedisPermissionCache`). The opt-in is per-instance.
+
+```typescript
+const { client, close } = createPermissionClient({
+  // ...
+  cacheTtlSeconds: 60, // opt back into a 60s TTL (not recommended)
+});
+```
+
+### Important: Helios-side cache must agree
+
+The Helios service runs its own `PermissionCacheService` (in
+`helios/src/internal/permission-cache.service.ts`) which uses the same
+key shape and JSON serialization. **Both layers must use the same TTL
+policy** — if Helios writes with one TTL and the SDK reads with another,
+the SDK's EX wins on the next SDK-side `set` call and may drop entries
+before Helios has a chance to re-write them. v0.5.0 keeps both layers
+in lockstep: both default to no expiry, both opt back into a TTL via a
+matching env var / option name.
 
 ## Concurrent read coalescing
 
@@ -189,9 +234,9 @@ is implemented in helios as ZIN-4901e (`ServicePermissionsController`
 ```bash
 yarn install
 # Codegen requires network — fetches the contract from GitHub.
-PERMISSION_CONTRACT_VERSION=v1.0.0 yarn codegen
+PERMISSION_CONTRACT_VERSION=v1.3.0 yarn codegen
 yarn lint                 # eslint clean
 yarn typecheck            # tsc --noEmit clean
-yarn test                 # 71/71 pass
+yarn test                 # 85/86 pass (1 pre-existing HMAC test failure on main, unrelated to v0.5.0)
 yarn test:ci              # jest --ci --coverage --verbose
 ```

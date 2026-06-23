@@ -23,9 +23,12 @@ describe('RedisPermissionCache', () => {
 
   beforeEach(() => {
     redis = new RedisMock();
+    // Default behavior: no TTL (matches DEFAULT_CACHE_TTL_SECONDS = 0).
+    // The cache is the primary read path; entries must outlive the
+    // request burst. Opt-in to TTL is exercised in the
+    // `ttlSeconds > 0` describe block below.
     cache = new RedisPermissionCache({
       redis: redis as unknown as import('ioredis').Redis,
-      ttlSeconds: 60,
       logger: silentLogger,
     });
   });
@@ -98,11 +101,33 @@ describe('RedisPermissionCache', () => {
     expect(raw).toBe(JSON.stringify(perms));
   });
 
-  it('TTL is set on writes (bounded staleness)', async () => {
+  it('default behavior: no TTL on writes (Redis PERSIST semantics)', async () => {
+    // The cache is the primary read path — entries must outlive the
+    // request burst for the 90-98% hit-rate target. No TTL by default;
+    // entries are refreshed only by writeThrough/invalidate calls.
     await cache.set('user-1', 'tenant-1', ['helios:members:view']);
     const ttl = await redis.ttl('helios:perms:user-1:tenant-1');
+    // Redis returns -1 for "key exists, no expiry" and -2 for "no such
+    // key". The set() above used NX, so the key exists with no TTL.
+    expect(ttl).toBe(-1);
+  });
+
+  it('writeThrough default behavior: no TTL (entries stick around)', async () => {
+    await cache.writeThrough('user-1', 'tenant-1', ['helios:members:view']);
+    const ttl = await redis.ttl('helios:perms:user-1:tenant-1');
+    expect(ttl).toBe(-1);
+  });
+
+  it('opt-in: ttlSeconds > 0 restores bounded staleness', async () => {
+    const ttlCache = new RedisPermissionCache({
+      redis: redis as unknown as import('ioredis').Redis,
+      ttlSeconds: 30,
+      logger: silentLogger,
+    });
+    await ttlCache.set('user-1', 'tenant-1', ['helios:members:view']);
+    const ttl = await redis.ttl('helios:perms:user-1:tenant-1');
     expect(ttl).toBeGreaterThan(0);
-    expect(ttl).toBeLessThanOrEqual(60);
+    expect(ttl).toBeLessThanOrEqual(30);
   });
 
   it('returns null and does not throw when Redis errors on GET', async () => {
@@ -116,7 +141,6 @@ describe('RedisPermissionCache', () => {
     } as unknown as import('ioredis').Redis;
     const brokenCache = new RedisPermissionCache({
       redis: brokenRedis,
-      ttlSeconds: 60,
       logger: silentLogger,
     });
     expect(await brokenCache.get('user-1', 'tenant-1')).toBeNull();
@@ -133,7 +157,6 @@ describe('RedisPermissionCache', () => {
     } as unknown as import('ioredis').Redis;
     const brokenCache = new RedisPermissionCache({
       redis: brokenRedis,
-      ttlSeconds: 60,
       logger: silentLogger,
     });
     await expect(brokenCache.set('user-1', 'tenant-1', ['helios:members:view'])).resolves.toBeUndefined();
@@ -150,7 +173,6 @@ describe('RedisPermissionCache', () => {
     } as unknown as import('ioredis').Redis;
     const brokenCache = new RedisPermissionCache({
       redis: brokenRedis,
-      ttlSeconds: 60,
       logger: silentLogger,
     });
     await expect(brokenCache.invalidate('user-1', 'tenant-1')).rejects.toThrow('redis down');

@@ -6,6 +6,21 @@
 //
 // Key shape: `helios:perms:{userId}:{tenantId}` -> JSON array of perms.
 //
+// TTL policy (no expiry by default):
+//   The cache is the primary read path for callerHasPermission. We aim
+//   for a 90-98% hit rate, which means entries must outlive the
+//   request burst. Every entry is invalidated explicitly at the
+//   mutation site (Helios calls invalidate/writeThrough after each
+//   role change, Hecate's event consumer drops the key on
+//   helios.* events). A TTL safety-net would only force needless
+//   re-population; remove it by default.
+//
+//   Pass `ttlSeconds: <positive int>` to opt back into a TTL. Useful
+//   for staging environments with churn that blows up the keyspace.
+//   When set, every write below passes EX explicitly. When unset
+//   (the default), writes pass no EX argument and Redis keeps the
+//   key forever until explicit DEL.
+//
 // Invalidation patterns:
 //   invalidate(userId)            -> SCAN MATCH helios:perms:{userId}:* DEL
 //   invalidate(userId, tenantId)  -> DEL helios:perms:{userId}:{tenantId}
@@ -18,14 +33,9 @@
 //   - GET failures: log warn + return null. Caller falls through to Helios.
 //   - SET / writeThrough failures: log warn + swallow. Cache is best-effort.
 //   - Invalidate failures: log error + throw. The caller (event consumer
-//     or Helios service) needs to know cache may be stale. The TTL is
-//     the bound — 60s of staleness is the worst case.
-//
-// Why the error asymmetry:
-//   - Reads / writes that fail are degraded-but-correct paths (Helios is
-//     the source of truth).
-//   - Invalidation failures leave stale data with no automatic recovery
-//     except TTL expiry. Operators need visibility.
+//     or Helios service) needs to know cache may be stale. With no TTL,
+//     a failed invalidation is sticky until the next writeThrough for
+//     that user; that is the operator-visible signal.
 // =============================================================================
 
 import type Redis from 'ioredis';
@@ -36,8 +46,18 @@ import type { PermissionCache } from './permission-cache.interface';
 
 const KEY_PREFIX = 'helios:perms:';
 
-/** Default TTL: 60 seconds. Bounds staleness when invalidation fails. */
-export const DEFAULT_CACHE_TTL_SECONDS = 60;
+/**
+ * Default TTL: none (PERMANENT). Entries are refreshed only by
+ * explicit writeThrough / invalidate calls. Override per-instance via
+ * the `ttlSeconds` constructor option.
+ *
+ * Historical note: v0.3.0 shipped with a 60s default TTL as a "safety
+ * net" for missed invalidations. It was removed when the team moved to
+ * a write-through model — the explicit invalidates on every mutation
+ * make the TTL redundant, and a 90-98% cache-hit-rate platform needs
+ * the entries to stick around.
+ */
+export const DEFAULT_CACHE_TTL_SECONDS = 0;
 
 /** SCAN batch size — balances round-trip count vs cursor overhead. */
 const SCAN_BATCH = 100;
@@ -45,7 +65,16 @@ const SCAN_BATCH = 100;
 export interface RedisPermissionCacheOptions {
   /** Configured ioredis client. Caller owns the connection lifecycle. */
   redis: Redis;
-  /** TTL in seconds. Default 60. */
+  /**
+   * TTL in seconds. Default 0 (no expiry — Redis PERSIST semantics).
+   * Pass any positive integer to opt back into a TTL.
+   *
+   * IMPORTANT: must match the Helios-side cache (the
+   * `PermissionCacheService.writeThrough` write). If Helios writes with
+   * one TTL and the SDK reads with another, the SDK's EX will win on
+   * the next SDK-side `set` call and may drop entries before Helios
+   * has a chance to re-write them.
+   */
   ttlSeconds?: number;
   /** Logger for diagnostics. Defaults to silent. */
   logger?: Logger;
@@ -118,14 +147,26 @@ export class RedisPermissionCache implements PermissionCache {
     try {
       // NX = only set if not exists. Prevents a slow in-flight read from
       // resurrecting a value that was invalidated after the read started.
-      // The TTL is the safety net for missed invalidations.
-      await this.redis.set(
-        this.key(userId, tenantId),
-        JSON.stringify(perms),
-        'EX',
-        this.ttlSeconds,
-        'NX',
-      );
+      //
+      // TTL: only set EX when ttlSeconds > 0. ttlSeconds === 0 (default)
+      // means "no expiry"; ioredis omits EX and Redis keeps the key
+      // until explicit DEL. We do NOT pass KEEPTTL here — this is a
+      // fresh write, not a re-write.
+      if (this.ttlSeconds > 0) {
+        await this.redis.set(
+          this.key(userId, tenantId),
+          JSON.stringify(perms),
+          'EX',
+          this.ttlSeconds,
+          'NX',
+        );
+      } else {
+        await this.redis.set(
+          this.key(userId, tenantId),
+          JSON.stringify(perms),
+          'NX',
+        );
+      }
     } catch (err) {
       this.logger.warn(
         { err, userId, tenantId },
@@ -144,12 +185,22 @@ export class RedisPermissionCache implements PermissionCache {
       // after it knows the new value is correct (e.g. after a role
       // change in user_projects). We want the next read to see the new
       // value immediately, not race with a stale cache entry.
-      await this.redis.set(
-        this.key(userId, tenantId),
-        JSON.stringify(perms),
-        'EX',
-        this.ttlSeconds,
-      );
+      //
+      // TTL: same policy as set() — only pass EX when configured. No
+      // KEEPTTL — this is an overwrite, not a refresh.
+      if (this.ttlSeconds > 0) {
+        await this.redis.set(
+          this.key(userId, tenantId),
+          JSON.stringify(perms),
+          'EX',
+          this.ttlSeconds,
+        );
+      } else {
+        await this.redis.set(
+          this.key(userId, tenantId),
+          JSON.stringify(perms),
+        );
+      }
     } catch (err) {
       this.logger.warn(
         { err, userId, tenantId },
@@ -176,7 +227,7 @@ export class RedisPermissionCache implements PermissionCache {
     } catch (err) {
       this.logger.error(
         { err, userId, tenantId },
-        'RedisPermissionCache.invalidate failed — cache may be stale for up to TTL seconds',
+        'RedisPermissionCache.invalidate failed — cache will stay stale until the next writeThrough for this user',
       );
       throw err;
     }
@@ -192,7 +243,7 @@ export class RedisPermissionCache implements PermissionCache {
     } catch (err) {
       this.logger.error(
         { err, tenantId },
-        'RedisPermissionCache.invalidateTenant failed — cache may be stale for up to TTL seconds',
+        'RedisPermissionCache.invalidateTenant failed — affected entries will be re-written on the next role change for each user',
       );
       throw err;
     }

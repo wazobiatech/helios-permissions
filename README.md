@@ -11,8 +11,10 @@ user allowed to do X in tenant Y?"** The answer lives in Helios's
 is the client for that source of truth, with three properties that matter
 in production:
 
-1. **Cache-first** — Redis-cached (60s TTL), so the hot path is one Redis
-   GET. Misses fetch from Helios and populate.
+1. **Cache-first** — Redis-cached (no TTL by default; opt-in via
+   `ttlSeconds`). The hot path is one Redis GET. Misses fetch from Helios
+   and populate. Entries stick around until explicit invalidation —
+   see [Cache TTL](#cache-ttl) below.
 2. **Event-driven invalidation** — Helios writes to the cache synchronously
    after every role change (write-through). Kafka events invalidate
    downstream caches as a backup.
@@ -130,15 +132,44 @@ Permissions follow `{service}:{resource}:{action}`. The closed union:
 ## Cache semantics
 
 - **Key shape:** `helios:perms:{userId}:{tenantId}` → JSON `Permission[]`
-- **TTL:** 60 seconds (the safety net for missed invalidations)
-- **Populate:** `SET ... NX EX 60` — never overwrites a concurrent populate (avoids stale-resurrection after invalidate race)
-- **Write-through (Helios only):** `SET ... EX 60` (no NX) — Helios KNOWS the new value, overwrites unconditionally
+- **TTL:** none by default (PERMANENT — entries stick around until explicit
+  invalidation). Pass `ttlSeconds: <positive int>` to opt back into a TTL
+  for staging / high-churn environments. See [Cache TTL](#cache-ttl) below.
+- **Populate:** `SET ... NX` — never overwrites a concurrent populate (avoids stale-resurrection after invalidate race). No EX when TTL is disabled.
+- **Write-through (Helios only):** `SET ...` (no NX) — Helios KNOWS the new value, overwrites unconditionally. No EX when TTL is disabled.
 - **Invalidate:** `SCAN MATCH ... | DEL` (non-blocking) for `invalidate(userId)` / `invalidateTenant`. Direct `DEL` for `invalidate(userId, tenantId)`.
 - **Negative cache:** `[]` (empty array) means "user is not a member" — distinct from `null` (miss).
 - **Failure modes:**
   - Redis GET fails → log + return null (caller falls through to Helios)
   - Redis SET fails → log + swallow (best-effort; cache miss next time)
-  - Redis DEL fails → log + throw (operators need to know — TTL is the only safety net)
+  - Redis DEL fails → log + throw (operators need to know — without a TTL,
+    a missed invalidation is sticky until the next writeThrough for this user)
+
+### Cache TTL
+
+The cache is the primary read path for `callerHasPermission`. The platform
+targets a 90-98% cache hit rate, which means entries must outlive the
+request burst. Every entry is invalidated explicitly at the mutation site
+— Helios calls `writeThrough` / `invalidate` after every role change,
+Hecate's event consumer drops the key on `helios.*` events, and the
+internal events handlers (`athens.project.*`, `athens.service.update`,
+`mercury.user.deleted`, `helios.invitation.accepted`) invalidate the
+tenant-level cache after each event. A 60s safety-net TTL would just be
+wasted work — entries the next read would re-populate anyway, forcing
+an unnecessary round-trip to Helios.
+
+v0.4.0 shipped with a 60s default TTL. v0.5.0 removed it. **This is a
+behavioral change for consumers**: if you relied on the implicit 60s
+TTL, you now get no expiry. To opt back in, pass `ttlSeconds: 60`
+(or any positive integer) to `createPermissionClient` or directly to
+the `RedisPermissionCache` constructor. The opt-in is per-instance.
+
+```typescript
+const { client, close } = createPermissionClient({
+  // ...
+  cacheTtlSeconds: 60, // opt back into a 60s TTL (not recommended)
+});
+```
 
 ## Concurrent read coalescing
 

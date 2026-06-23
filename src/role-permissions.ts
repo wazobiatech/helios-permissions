@@ -1,8 +1,8 @@
 // =============================================================================
 // AUTO-GENERATED — DO NOT EDIT.
 //
-// Source: permission-contract v1.3.0
-// Generated at: 2026-06-22
+// Source: permission-contract v1.4.0
+// Generated at: 2026-06-23
 // Regenerate via: node scripts/codegen-ts.mjs permissions.json > src/role-permissions.ts
 //
 // The Permission union, PERM_SCOPE map, and ROLE_PERMISSIONS map are derived
@@ -66,6 +66,9 @@ export const PLATFORM_PERMISSIONS = [
   'helios:roles:revoke',
   'helios:invitations:create',
   'helios:invitations:revoke',
+  'helios:external:register',
+  'helios:external:revoke',
+  'helios:external:view',
 ] as const;
 
 /**
@@ -138,6 +141,9 @@ export const PERM_SCOPE: Record<Permission, PermScope> = {
   'helios:roles:revoke': 'platform',
   'helios:invitations:create': 'platform',
   'helios:invitations:revoke': 'platform',
+  'helios:external:register': 'platform',
+  'helios:external:revoke': 'platform',
+  'helios:external:view': 'platform',
   // project
   'muse:posts:read': 'project',
   'muse:posts:write': 'project',
@@ -202,6 +208,9 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'helios:roles:revoke',
     'helios:invitations:create',
     'helios:invitations:revoke',
+    'helios:external:register',
+    'helios:external:revoke',
+    'helios:external:view',
   ],
   ADMIN: [
     'athens:project:view',
@@ -224,6 +233,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'helios:roles:revoke',
     'helios:invitations:create',
     'helios:invitations:revoke',
+    'helios:external:view',
   ],
   EDITOR: [
     'athens:project:view',
