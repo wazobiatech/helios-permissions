@@ -38,11 +38,25 @@ describe('ROLE_PERMISSIONS', () => {
     expect(ownerPerms).toContain('athens:project:delete');
     expect(ownerPerms).toContain('athens:services:enable');
     expect(ownerPerms).toContain('mercury:users:write');
+    // v1.5.0: api_keys:manage remains OWNER-only (deprecated umbrella)
     expect(ownerPerms).toContain('mercury:api_keys:manage');
+    // v1.5.0: split-out api_keys perms — OWNER gets all four
+    expect(ownerPerms).toContain('mercury:api_keys:create');
+    expect(ownerPerms).toContain('mercury:api_keys:revoke');
+    expect(ownerPerms).toContain('mercury:api_keys:read');
     expect(ownerPerms).toContain('muse:author:delete');
     expect(ownerPerms).toContain('helios:tenant:transfer');
     // Dual-scope perms (valid in platform-user path too)
     expect(ownerPerms).toContain('muse:author:read');
+    // v1.5.0: new Mercury platform-scope perms all flow to OWNER
+    expect(ownerPerms).toContain('mercury:users:batch_read');
+    expect(ownerPerms).toContain('mercury:service_clients:read');
+    expect(ownerPerms).toContain('mercury:auth_config:read');
+    expect(ownerPerms).toContain('mercury:auth_config_apple:create');
+    expect(ownerPerms).toContain('mercury:auth_config_oauth:update');
+    expect(ownerPerms).toContain('mercury:auth_config_forgot_password:create');
+    expect(ownerPerms).toContain('mercury:connection_oauth:refresh');
+    expect(ownerPerms).toContain('mercury:events:consume');
   });
 
   it('grants ADMIN everything except destructive deletes and ownership transfer', () => {
@@ -54,6 +68,18 @@ describe('ROLE_PERMISSIONS', () => {
     expect(adminPerms).toContain('muse:author:create');
     expect(adminPerms).not.toContain('muse:author:delete');
     expect(adminPerms).not.toContain('helios:tenant:transfer');
+    // v1.5.0: ADMIN gets the split api_keys perms but NOT the deprecated
+    // api_keys:manage umbrella (OWNER-only).
+    expect(adminPerms).toContain('mercury:api_keys:create');
+    expect(adminPerms).toContain('mercury:api_keys:revoke');
+    expect(adminPerms).toContain('mercury:api_keys:read');
+    expect(adminPerms).not.toContain('mercury:api_keys:manage');
+    // v1.5.0: new Mercury platform-scope perms flow to ADMIN too
+    // (users:batch_read stays OWNER-only — bulk read is sensitive)
+    expect(adminPerms).not.toContain('mercury:users:batch_read');
+    expect(adminPerms).toContain('mercury:service_clients:read');
+    expect(adminPerms).toContain('mercury:auth_config:read');
+    expect(adminPerms).toContain('mercury:events:consume');
   });
 
   it('grants EDITOR platform-user read/write on content services, no team mgmt', () => {
@@ -189,17 +215,35 @@ describe('Permission union exhaustiveness', () => {
 // v1.3.0 — 4-scope model
 // =============================================================================
 
-describe('PERM_SCOPE (v1.3.0)', () => {
+describe('PERM_SCOPE (v1.3.0 / v1.5.0)', () => {
   it('contains every perm in the contract vocabulary', () => {
-    // The contract has 32 perms (3 self + 22 platform + 5 project + 1 dual
-    // = 31 as of v1.3.0; see permissions.json). Every one of them MUST
-    // appear in PERM_SCOPE.
+    // v1.5.0 (ZIN-4902): contract has 58 perms (12 self + 40 platform + 5
+    // project + 1 dual = 58; 29 Mercury + 7 Athens + 10 Muse + 12 Helios).
+    // v1.3.0 had 31 perms; v1.4.0 added 3 helios:external:* perms (34);
+    // v1.5.0 adds 24 Mercury perms. Every one of them MUST appear in
+    // PERM_SCOPE.
     expect(PERM_SCOPE['helios:tenant:switch:self']).toBe('self');
     expect(PERM_SCOPE['mercury:user:read:self']).toBe('self');
     expect(PERM_SCOPE['mercury:user:write:self']).toBe('self');
+    expect(PERM_SCOPE['mercury:user:delete:self']).toBe('self'); // v1.5.0
+    expect(PERM_SCOPE['mercury:connection:read:self']).toBe('self'); // v1.5.0
+    expect(PERM_SCOPE['mercury:connection_slack:revoke:self']).toBe('self'); // v1.5.0
 
     expect(PERM_SCOPE['athens:project:view']).toBe('platform');
     expect(PERM_SCOPE['helios:tenant:transfer']).toBe('platform');
+    // v1.5.0: split api_keys:manage into create/revoke/read; manage is
+    // OWNER-only deprecated umbrella.
+    expect(PERM_SCOPE['mercury:api_keys:create']).toBe('platform');
+    expect(PERM_SCOPE['mercury:api_keys:revoke']).toBe('platform');
+    expect(PERM_SCOPE['mercury:api_keys:read']).toBe('platform');
+    expect(PERM_SCOPE['mercury:api_keys:manage']).toBe('platform');
+    // v1.5.0: new platform-scope mercury perms
+    expect(PERM_SCOPE['mercury:users:batch_read']).toBe('platform');
+    expect(PERM_SCOPE['mercury:service_clients:read']).toBe('platform');
+    expect(PERM_SCOPE['mercury:events:consume']).toBe('platform');
+    expect(PERM_SCOPE['mercury:auth_config:read']).toBe('platform');
+    expect(PERM_SCOPE['mercury:auth_config_apple:create']).toBe('platform');
+    expect(PERM_SCOPE['mercury:connection_oauth:refresh']).toBe('platform');
 
     expect(PERM_SCOPE['muse:posts:read']).toBe('project');
     expect(PERM_SCOPE['muse:drafts:write']).toBe('project');
@@ -216,18 +260,54 @@ describe('PERM_SCOPE (v1.3.0)', () => {
 });
 
 describe('scope-partitioned tuples (v1.3.0)', () => {
+  it('v1.5.0 scope counts: 12 self, 40 platform, 5 project, 1 dual (= 58 total)', () => {
+    // Locks the 4-segment-allowed v1.5.0 schema. If the contract grows
+    // or the emitter starts bucketing incorrectly, this fails first.
+    expect(SELF_PERMISSIONS).toHaveLength(12);
+    expect(PLATFORM_PERMISSIONS).toHaveLength(40);
+    expect(PROJECT_PERMISSIONS).toHaveLength(5);
+    expect(DUAL_PERMISSIONS).toHaveLength(1);
+    expect(Object.keys(PERM_SCOPE)).toHaveLength(58);
+    expect(
+      SELF_PERMISSIONS.length +
+        PLATFORM_PERMISSIONS.length +
+        PROJECT_PERMISSIONS.length +
+        DUAL_PERMISSIONS.length,
+    ).toBe(Object.keys(PERM_SCOPE).length);
+  });
+
   it('SELF_PERMISSIONS only contains self-scope perms', () => {
     for (const p of SELF_PERMISSIONS) {
       expect(PERM_SCOPE[p as Permission]).toBe('self');
     }
     expect(SELF_PERMISSIONS).toContain('helios:tenant:switch:self');
     expect(SELF_PERMISSIONS).toContain('mercury:user:read:self');
+    // v1.5.0: new self-scope Mercury perms
+    expect(SELF_PERMISSIONS).toContain('mercury:user:delete:self');
+    expect(SELF_PERMISSIONS).toContain('mercury:connection:read:self');
+    expect(SELF_PERMISSIONS).toContain('mercury:connection_slack:revoke:self');
+    expect(SELF_PERMISSIONS).toContain('mercury:connection_google:revoke:self');
+    expect(SELF_PERMISSIONS).toContain('mercury:connection_imap:revoke:self');
+    expect(SELF_PERMISSIONS).toContain('mercury:connection_imap:create:self');
+    expect(SELF_PERMISSIONS).toContain('mercury:connection_slack:phrase_create:self');
+    expect(SELF_PERMISSIONS).toContain('mercury:connection_oauth:initiate:self');
+    expect(SELF_PERMISSIONS).toContain('mercury:connection_oauth:complete:self');
   });
 
   it('PLATFORM_PERMISSIONS only contains platform-scope perms', () => {
     for (const p of PLATFORM_PERMISSIONS) {
       expect(PERM_SCOPE[p as Permission]).toBe('platform');
     }
+    // v1.5.0 spot-checks
+    expect(PLATFORM_PERMISSIONS).toContain('mercury:api_keys:create');
+    expect(PLATFORM_PERMISSIONS).toContain('mercury:api_keys:revoke');
+    expect(PLATFORM_PERMISSIONS).toContain('mercury:api_keys:read');
+    expect(PLATFORM_PERMISSIONS).toContain('mercury:api_keys:manage');
+    expect(PLATFORM_PERMISSIONS).toContain('mercury:users:batch_read');
+    expect(PLATFORM_PERMISSIONS).toContain('mercury:service_clients:read');
+    expect(PLATFORM_PERMISSIONS).toContain('mercury:events:consume');
+    expect(PLATFORM_PERMISSIONS).toContain('mercury:auth_config:read');
+    expect(PLATFORM_PERMISSIONS).toContain('mercury:connection_oauth:refresh');
   });
 
   it('PROJECT_PERMISSIONS only contains project-scope perms', () => {
