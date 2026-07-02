@@ -37,8 +37,42 @@
 import type { PermissionCache } from './cache/permission-cache.interface';
 import { HeliosClient, HeliosUnreachableError } from './helios/fetch-user-permissions';
 import type { Permission, Role } from './role-permissions';
+import {
+  isSelfScope,
+  SELF_PERMISSIONS,
+  ROLE_PERMISSIONS,
+  ROLES,
+} from './role-permissions';
 import type { Logger } from './types/logger';
 import { silentLogger } from './types/logger';
+
+/**
+ * A perm is "universal-by-contract" — granted to every authenticated caller
+ * without consulting Helios — if any of:
+ *   1. The perm is `self` scope (universal by invariant 8 of the
+ *      permission-contract — every authenticated user has these).
+ *   2. The perm is in every role's `role_permissions[*]` array
+ *      (granted to OWNER + ADMIN + EDITOR + VIEWER; universal by
+ *      contract design, regardless of scope).
+ *
+ * Why this exists: Helios stores per-(user, tenant) membership rows.
+ * Root-tenant users (Mercury's platform admins) and any other tenantless
+ * caller have no row to look up. Without this short-circuit, every
+ * `callerHasPermission` for a universal perm would resolve to
+ * `not_a_member` and 403 the caller. The contract invariant is that
+ * these perms do NOT depend on tenant membership — they are universal.
+ *
+ * The check trusts the contract: if a perm is in every role's perm
+ * array, the contract author intends every authenticated user to have
+ * it. Adding a perm to all four roles is a deliberate, reviewable
+ * contract decision — the SDK honors it without re-fetching.
+ */
+function isUniversalPerm(perm: Permission): boolean {
+  if (isSelfScope(perm)) {
+    return true;
+  }
+  return ROLES.every((role) => ROLE_PERMISSIONS[role].includes(perm));
+}
 
 export interface PermissionClientOptions {
   /** Helios HTTP client. */
@@ -96,6 +130,15 @@ export class PermissionClient {
    * (userId, tenantId) are coalesced via in-process lock — only one
    * Helios call is made per cold key.
    *
+   * Self-scope perms (e.g. `mercury:user:write:self`) are universal by
+   * contract — every authenticated user has them regardless of role or
+   * tenant membership. We short-circuit on `isSelfScope(requiredPerm)`
+   * and return `true` immediately, bypassing the cache and the Helios
+   * round-trip. This is critical for root-tenant users (Mercury's
+   * platform admins) who have no Helios membership row: without the
+   * short-circuit, `callerHasPermission(rootUser, rootTenant, ...)`
+   * would resolve to `not_a_member` and deny every self-scope perm.
+   *
    * On Helios failure with no cache entry: fail-closed (deny) unless
    * the client was constructed with `staleOnError: false`, in which
    * case the HeliosUnreachableError propagates.
@@ -105,6 +148,9 @@ export class PermissionClient {
     tenantId: string,
     requiredPerm: Permission,
   ): Promise<boolean> {
+    if (isUniversalPerm(requiredPerm)) {
+      return true;
+    }
     const perms = await this.resolvePerms(userId, tenantId);
     return perms.includes(requiredPerm);
   }
@@ -118,9 +164,17 @@ export class PermissionClient {
    * cache-first behavior as `callerHasPermission`. An empty array
    * means the user is not a member of the tenant (or the membership
    * is inactive / past expiry).
+   *
+   * Self-scope perms (e.g. `mercury:user:write:self`) are universal by
+   * contract — every authenticated user has them regardless of role or
+   * tenant membership. We always fold `SELF_PERMISSIONS` into the result
+   * so callers see a complete view. Without this, root-tenant users
+   * (Mercury's platform admins, who have no Helios membership row) would
+   * show an empty perm array even though they can mutate their own profile.
    */
   async getUserPermissions(userId: string, tenantId: string): Promise<Permission[]> {
-    return this.resolvePerms(userId, tenantId);
+    const rolePerms = await this.resolvePerms(userId, tenantId);
+    return [...SELF_PERMISSIONS, ...rolePerms];
   }
 
   /**
@@ -136,6 +190,10 @@ export class PermissionClient {
     tenantId: string,
     perm: Permission,
   ): Promise<PermissionExplanation> {
+    // Universal perms are granted by contract — no Helios lookup needed.
+    if (isUniversalPerm(perm)) {
+      return { granted: true, role: null, reason: 'granted_by_role' };
+    }
     try {
       const resolution = await this.helios.fetchUserPermissions(userId, tenantId);
 

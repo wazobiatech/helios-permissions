@@ -7,12 +7,34 @@
 
 | | |
 |---|---|
-| Version | **0.5.0** — no-expiry cache default; codegen'd from `wazobiatech/permission-contract` |
+| Version | **0.7.0** — universal-by-contract short-circuit in `callerHasPermission` (root-tenant safe) |
 | Branch | `feature/ZIN-4901b--helios-permissions-sdk` |
-| Tests | 75 passing on the 4 SDK-covered suites (role-permissions, redis-cache, in-memory-cache, permission-client). Plus 10 passing on helios-client.spec.ts (1 pre-existing HMAC test failure on `main`, unrelated to v0.5.0). Plus 11 passing on the helios-event.invalidator.spec.ts (broken pre-existing peer-dep issue: `rxjs/operators` not installed, unrelated to v0.5.0). |
+| Tests | 22 passing on `permission-client.spec.ts` (includes 6 short-circuit tests). Plus 36 passing on `role-permissions.spec.ts` (v1.6.0 scope counts: 12 self / 40 platform / 19 project / 1 dual). Plus other SDK-covered suites. Pre-existing test failures on `helios-client.spec.ts` (HMAC vector mismatch) and `helios-event.invalidator.spec.ts` / `redis-permission-cache.spec.ts` (test infrastructure: missing peer deps) are unrelated to v0.7.0. |
 | Build | `tsc` clean, dist/ generated |
 | Typecheck | `tsc --noEmit` clean |
-| Contract version | `permission-contract@v1.4.0` (4-scope permission model + `helios:external:*` perms for Use case 2) |
+| Contract version | `permission-contract@v1.6.0` (4-scope model + Mercury v1.5.0 expansion + Zeta v1.6.0) |
+
+## v0.7.0 — universal-by-contract short-circuit
+
+`PermissionClient.callerHasPermission(userId, tenantId, perm)` short-circuits
+when `perm` is universal-by-contract — i.e. either `self` scope (every
+authenticated user has it by invariant 8) or granted to every role in
+`ROLE_PERMISSIONS` (OWNER + ADMIN + EDITOR + VIEWER). The short-circuit
+returns `true` without consulting cache or Helios.
+
+This fixes a root-tenant dead-end: Mercury's platform admins have no
+Helios membership row (the platform root tenant is not a real tenant),
+so every `callerHasPermission(rootUser, rootTenant, perm)` previously
+resolved to `not_a_member` → 403. The contract invariant is that these
+perms are universal; the SDK now honors that without a Helios round-trip.
+
+`explain(...)` short-circuits the same way. `getUserPermissions(...)`
+folds `SELF_PERMISSIONS` into the result so callers see a complete
+view regardless of tenant membership.
+
+Adding a perm to all four roles is a deliberate, reviewable contract
+decision — the SDK trusts the contract and short-circuits without
+re-fetching.
 
 ## What this SDK does
 
@@ -234,9 +256,9 @@ is implemented in helios as ZIN-4901e (`ServicePermissionsController`
 ```bash
 yarn install
 # Codegen requires network — fetches the contract from GitHub.
-PERMISSION_CONTRACT_VERSION=v1.3.0 yarn codegen
+PERMISSION_CONTRACT_VERSION=v1.6.0 yarn codegen
 yarn lint                 # eslint clean
 yarn typecheck            # tsc --noEmit clean
-yarn test                 # 85/86 pass (1 pre-existing HMAC test failure on main, unrelated to v0.5.0)
+yarn test                 # 22+36 pass on permission-client + role-permissions (other suites have pre-existing infrastructure failures)
 yarn test:ci              # jest --ci --coverage --verbose
 ```

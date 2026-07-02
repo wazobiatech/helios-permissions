@@ -34,7 +34,7 @@ const ROOT = resolve(__dirname, '..');
 const GENERATED_FILE = resolve(ROOT, 'src/role-permissions.ts');
 const CODEGEN_SCRIPT = resolve(__dirname, 'codegen-ts.mjs');
 
-const CONTRACT_VERSION = process.env.PERMISSION_CONTRACT_VERSION ?? 'v1.5.0';
+const CONTRACT_VERSION = process.env.PERMISSION_CONTRACT_VERSION ?? 'v1.6.0';
 const CONTRACT_URL = `https://raw.githubusercontent.com/wazobiatech/permission-contract/${CONTRACT_VERSION}/permissions.json`;
 
 function log(msg) {

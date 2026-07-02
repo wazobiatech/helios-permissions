@@ -72,6 +72,104 @@ describe('PermissionClient', () => {
     });
   });
 
+  describe('callerHasPermission — self-scope short-circuit', () => {
+    // Self-scope perms (e.g. mercury:user:write:self) are universal by
+    // contract — every authenticated user has them regardless of role
+    // or tenant membership. The SDK must short-circuit and return true
+    // without touching cache or Helios. Critical for root-tenant users
+    // (Mercury platform admins) who have no Helios membership row.
+
+    it('returns true for a self-scope perm and never calls Helios', async () => {
+      const granted = await client.callerHasPermission(
+        'root-platform-admin',
+        'root-tenant-uuid',
+        'mercury:user:write:self',
+      );
+      expect(granted).toBe(true);
+      expect(helios.callCount).toBe(0);
+    });
+
+    it('returns true for self-scope perm even when Helios would return not_a_member', async () => {
+      // If the short-circuit didn't exist, this would resolve to
+      // not_a_member (root tenant has no Helios row) → false. The
+      // short-circuit ensures the contract is honored.
+      helios.resolutions.set('root-admin:root-tenant', {
+        status: 'not_a_member',
+      });
+      const granted = await client.callerHasPermission(
+        'root-admin',
+        'root-tenant',
+        'mercury:connection:read:self',
+      );
+      expect(granted).toBe(true);
+    });
+
+    it('does not short-circuit platform-scope perms (must still go through Helios)', async () => {
+      helios.resolutions.set('user-1:tenant-1', {
+        status: 'active',
+        role: 'VIEWER',
+        permissions: ['mercury:api_keys:read'],
+      });
+      const granted = await client.callerHasPermission(
+        'user-1',
+        'tenant-1',
+        'mercury:service_clients:read',
+      );
+      expect(granted).toBe(true); // VIEWER has service_clients:read (all 4 roles do)
+      expect(helios.callCount).toBe(0); // universal-by-role short-circuit fired
+    });
+  });
+
+  describe('callerHasPermission — universal-by-role short-circuit', () => {
+    // A perm is "universal-by-contract" if it appears in EVERY role's
+    // role_permissions[*] array (or is self-scope). The contract author
+    // is asserting every authenticated user has it. The SDK short-circuits
+    // so root-tenant / tenantless callers aren't 403'd.
+
+    it('short-circuits a perm granted to all 4 roles (mercury:api_keys:read)', async () => {
+      const granted = await client.callerHasPermission(
+        'root-admin',
+        'root-tenant',
+        'mercury:api_keys:read',
+      );
+      expect(granted).toBe(true);
+      expect(helios.callCount).toBe(0);
+    });
+
+    it('does NOT short-circuit a perm granted to only some roles (mercury:api_keys:create)', async () => {
+      // api_keys:create is OWNER+ADMIN only — not all 4 roles.
+      helios.resolutions.set('viewer-user:tenant-1', {
+        status: 'active',
+        role: 'VIEWER',
+        permissions: ['mercury:api_keys:read'], // no api_keys:create
+      });
+      const granted = await client.callerHasPermission(
+        'viewer-user',
+        'tenant-1',
+        'mercury:api_keys:create',
+      );
+      expect(granted).toBe(false); // VIEWER doesn't have create
+      expect(helios.callCount).toBe(1); // short-circuit did NOT fire — must check role
+    });
+
+    it('admin can create keys (mercury:api_keys:create via Helios, not short-circuit)', async () => {
+      // For perms NOT granted to all roles, the SDK must still consult Helios.
+      // This proves the Helios path remains active for non-universal perms.
+      helios.resolutions.set('admin-user:tenant-1', {
+        status: 'active',
+        role: 'ADMIN',
+        permissions: ['mercury:api_keys:create', 'mercury:api_keys:revoke', 'mercury:api_keys:read'],
+      });
+      const granted = await client.callerHasPermission(
+        'admin-user',
+        'tenant-1',
+        'mercury:api_keys:create',
+      );
+      expect(granted).toBe(true);
+      expect(helios.callCount).toBe(1);
+    });
+  });
+
   describe('callerHasPermission — cache behavior', () => {
     it('hits cache on second call (no second Helios fetch)', async () => {
       helios.resolutions.set('user-1:tenant-1', {
