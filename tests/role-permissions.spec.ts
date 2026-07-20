@@ -260,15 +260,16 @@ describe('PERM_SCOPE (v1.3.0 / v1.5.0)', () => {
 });
 
 describe('scope-partitioned tuples (v1.3.0)', () => {
-  it('v1.6.0 scope counts: 12 self, 40 platform, 19 project, 1 dual (= 72 total)', () => {
-    // Locks the v1.5.0 4-segment-allowed schema + v1.6.0 zeta additions
-    // (14 project-scope perms). If the contract grows or the emitter
+  it('v1.7.0 scope counts: 12 self, 43 platform, 18 project, 16 dual (= 89 total)', () => {
+    // Locks the v1.5.0 4-segment-allowed schema, v1.6.0 zeta additions
+    // (14 project-scope perms), and v1.7.0 muse additions (3 platform,
+    // -1 project, +15 dual). If the contract grows or the emitter
     // starts bucketing incorrectly, this fails first.
     expect(SELF_PERMISSIONS).toHaveLength(12);
-    expect(PLATFORM_PERMISSIONS).toHaveLength(40);
-    expect(PROJECT_PERMISSIONS).toHaveLength(19);
-    expect(DUAL_PERMISSIONS).toHaveLength(1);
-    expect(Object.keys(PERM_SCOPE)).toHaveLength(72);
+    expect(PLATFORM_PERMISSIONS).toHaveLength(43);
+    expect(PROJECT_PERMISSIONS).toHaveLength(18);
+    expect(DUAL_PERMISSIONS).toHaveLength(16);
+    expect(Object.keys(PERM_SCOPE)).toHaveLength(89);
     expect(
       SELF_PERMISSIONS.length +
         PLATFORM_PERMISSIONS.length +

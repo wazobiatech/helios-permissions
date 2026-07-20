@@ -1,8 +1,8 @@
 // =============================================================================
 // AUTO-GENERATED — DO NOT EDIT.
 //
-// Source: permission-contract v1.6.0
-// Generated at: 2026-07-02
+// Source: permission-contract v1.7.0
+// Generated at: 2026-07-20
 // Regenerate via: node scripts/codegen-ts.mjs permissions.json > src/role-permissions.ts
 //
 // The Permission union, PERM_SCOPE map, and ROLE_PERMISSIONS map are derived
@@ -80,7 +80,10 @@ export const PLATFORM_PERMISSIONS = [
   'mercury:events:consume',
   'muse:blog:create',
   'muse:blog:read',
+  'muse:blog:update',
+  'muse:blog:delete',
   'muse:author:create',
+  'muse:author:update',
   'muse:author:delete',
   'helios:tenant:transfer',
   'helios:members:view',
@@ -102,7 +105,6 @@ export const PLATFORM_PERMISSIONS = [
 export const PROJECT_PERMISSIONS = [
   'muse:posts:read',
   'muse:posts:write',
-  'muse:posts:delete',
   'muse:drafts:read',
   'muse:drafts:write',
   'zeta:fines:view',
@@ -127,6 +129,21 @@ export const PROJECT_PERMISSIONS = [
  */
 export const DUAL_PERMISSIONS = [
   'muse:author:read',
+  'muse:posts:delete',
+  'muse:posts:revert',
+  'muse:tag:create',
+  'muse:tag:read',
+  'muse:tag:update',
+  'muse:tag:delete',
+  'muse:category:create',
+  'muse:category:read',
+  'muse:category:update',
+  'muse:category:delete',
+  'muse:redirect:create',
+  'muse:redirect:read',
+  'muse:redirect:update',
+  'muse:redirect:delete',
+  'muse:redirect:analytics',
 ] as const;
 
 /**
@@ -193,7 +210,10 @@ export const PERM_SCOPE: Record<Permission, PermScope> = {
   'mercury:events:consume': 'platform',
   'muse:blog:create': 'platform',
   'muse:blog:read': 'platform',
+  'muse:blog:update': 'platform',
+  'muse:blog:delete': 'platform',
   'muse:author:create': 'platform',
+  'muse:author:update': 'platform',
   'muse:author:delete': 'platform',
   'helios:tenant:transfer': 'platform',
   'helios:members:view': 'platform',
@@ -209,7 +229,6 @@ export const PERM_SCOPE: Record<Permission, PermScope> = {
   // project
   'muse:posts:read': 'project',
   'muse:posts:write': 'project',
-  'muse:posts:delete': 'project',
   'muse:drafts:read': 'project',
   'muse:drafts:write': 'project',
   'zeta:fines:view': 'project',
@@ -228,6 +247,21 @@ export const PERM_SCOPE: Record<Permission, PermScope> = {
   'zeta:tenant:configure': 'project',
   // platform/project
   'muse:author:read': 'platform/project',
+  'muse:posts:delete': 'platform/project',
+  'muse:posts:revert': 'platform/project',
+  'muse:tag:create': 'platform/project',
+  'muse:tag:read': 'platform/project',
+  'muse:tag:update': 'platform/project',
+  'muse:tag:delete': 'platform/project',
+  'muse:category:create': 'platform/project',
+  'muse:category:read': 'platform/project',
+  'muse:category:update': 'platform/project',
+  'muse:category:delete': 'platform/project',
+  'muse:redirect:create': 'platform/project',
+  'muse:redirect:read': 'platform/project',
+  'muse:redirect:update': 'platform/project',
+  'muse:redirect:delete': 'platform/project',
+  'muse:redirect:analytics': 'platform/project',
 };
 
 /** The four valid perm scopes. Mirrors the contract's `scope` enum. */
@@ -288,9 +322,27 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'mercury:events:consume',
     'muse:blog:create',
     'muse:blog:read',
+    'muse:blog:update',
+    'muse:blog:delete',
     'muse:author:create',
     'muse:author:read',
+    'muse:author:update',
     'muse:author:delete',
+    'muse:posts:delete',
+    'muse:posts:revert',
+    'muse:tag:create',
+    'muse:tag:read',
+    'muse:tag:update',
+    'muse:tag:delete',
+    'muse:category:create',
+    'muse:category:read',
+    'muse:category:update',
+    'muse:category:delete',
+    'muse:redirect:create',
+    'muse:redirect:read',
+    'muse:redirect:update',
+    'muse:redirect:delete',
+    'muse:redirect:analytics',
     'helios:tenant:transfer',
     'helios:members:view',
     'helios:members:invite',
@@ -328,8 +380,25 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'mercury:events:consume',
     'muse:blog:create',
     'muse:blog:read',
+    'muse:blog:update',
     'muse:author:create',
     'muse:author:read',
+    'muse:author:update',
+    'muse:posts:delete',
+    'muse:posts:revert',
+    'muse:tag:create',
+    'muse:tag:read',
+    'muse:tag:update',
+    'muse:tag:delete',
+    'muse:category:create',
+    'muse:category:read',
+    'muse:category:update',
+    'muse:category:delete',
+    'muse:redirect:create',
+    'muse:redirect:read',
+    'muse:redirect:update',
+    'muse:redirect:delete',
+    'muse:redirect:analytics',
     'helios:members:view',
     'helios:members:invite',
     'helios:members:remove',
@@ -346,8 +415,21 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'mercury:service_clients:read',
     'muse:blog:create',
     'muse:blog:read',
+    'muse:blog:update',
     'muse:author:create',
     'muse:author:read',
+    'muse:author:update',
+    'muse:posts:delete',
+    'muse:posts:revert',
+    'muse:tag:create',
+    'muse:tag:read',
+    'muse:tag:update',
+    'muse:category:create',
+    'muse:category:read',
+    'muse:category:update',
+    'muse:redirect:create',
+    'muse:redirect:read',
+    'muse:redirect:update',
   ],
   VIEWER: [
     'athens:project:view',
@@ -356,6 +438,9 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'mercury:service_clients:read',
     'muse:blog:read',
     'muse:author:read',
+    'muse:tag:read',
+    'muse:category:read',
+    'muse:redirect:read',
   ],
 } as const;
 
