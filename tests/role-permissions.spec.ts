@@ -66,7 +66,10 @@ describe('ROLE_PERMISSIONS', () => {
     expect(adminPerms).not.toContain('athens:project:delete');
     expect(adminPerms).toContain('muse:blog:create');
     expect(adminPerms).toContain('muse:author:create');
-    expect(adminPerms).not.toContain('muse:author:delete');
+    // v1.9.2: muse:author:delete is granted to ADMIN+EDITOR (matches
+    // muse:author:update). Only muse:blog:delete remains OWNER-only.
+    expect(adminPerms).toContain('muse:author:delete');
+    expect(adminPerms).not.toContain('muse:blog:delete');
     expect(adminPerms).not.toContain('helios:tenant:transfer');
     // v1.5.0: ADMIN gets the split api_keys perms but NOT the deprecated
     // api_keys:manage umbrella (OWNER-only).
@@ -87,7 +90,8 @@ describe('ROLE_PERMISSIONS', () => {
     expect(editorPerms).toContain('muse:blog:create');
     expect(editorPerms).toContain('muse:blog:read');
     expect(editorPerms).toContain('muse:author:create');
-    expect(editorPerms).not.toContain('muse:author:delete');
+    // v1.9.2: muse:author:delete is granted to EDITOR (matches author:update).
+    expect(editorPerms).toContain('muse:author:delete');
     expect(editorPerms).not.toContain('athens:project:update');
     expect(editorPerms).not.toContain('helios:members:invite');
     expect(editorPerms).not.toContain('helios:tenant:transfer');
@@ -159,7 +163,10 @@ describe('roleHasPermission', () => {
 
   it('returns false when role lacks perm', () => {
     expect(roleHasPermission('VIEWER', 'helios:tenant:transfer')).toBe(false);
-    expect(roleHasPermission('EDITOR', 'muse:author:delete')).toBe(false);
+    // v1.9.2: EDITOR now has muse:author:delete. Use the still-Owner-only
+    // muse:blog:delete as the negative test instead.
+    expect(roleHasPermission('EDITOR', 'muse:blog:delete')).toBe(false);
+    expect(roleHasPermission('ADMIN', 'muse:blog:delete')).toBe(false);
   });
 });
 
@@ -260,15 +267,18 @@ describe('PERM_SCOPE (v1.3.0 / v1.5.0)', () => {
 });
 
 describe('scope-partitioned tuples (v1.3.0)', () => {
-  it('v1.6.0 scope counts: 12 self, 40 platform, 19 project, 1 dual (= 72 total)', () => {
-    // Locks the v1.5.0 4-segment-allowed schema + v1.6.0 zeta additions
-    // (14 project-scope perms). If the contract grows or the emitter
-    // starts bucketing incorrectly, this fails first.
+  it('v1.9.2 scope counts: 12 self, 40 platform, 18 project, 22 dual (= 92 total)', () => {
+    // Locks the v1.5.0 4-segment-allowed schema, v1.6.0 zeta additions
+    // (14 project-scope perms), v1.7.0 muse additions (3 platform,
+    // -1 project, +15 dual), and v1.9.2 corrections (muse:author:delete
+    // moved from platform to dual = -3 platform, +3 dual; 3 new faq
+    // perms added to dual = +3 dual). If the contract grows or the
+    // emitter starts bucketing incorrectly, this fails first.
     expect(SELF_PERMISSIONS).toHaveLength(12);
     expect(PLATFORM_PERMISSIONS).toHaveLength(40);
-    expect(PROJECT_PERMISSIONS).toHaveLength(19);
-    expect(DUAL_PERMISSIONS).toHaveLength(1);
-    expect(Object.keys(PERM_SCOPE)).toHaveLength(72);
+    expect(PROJECT_PERMISSIONS).toHaveLength(18);
+    expect(DUAL_PERMISSIONS).toHaveLength(22);
+    expect(Object.keys(PERM_SCOPE)).toHaveLength(92);
     expect(
       SELF_PERMISSIONS.length +
         PLATFORM_PERMISSIONS.length +
