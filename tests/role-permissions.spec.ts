@@ -267,18 +267,20 @@ describe('PERM_SCOPE (v1.3.0 / v1.5.0)', () => {
 });
 
 describe('scope-partitioned tuples (v1.3.0)', () => {
-  it('v1.9.2 scope counts: 12 self, 40 platform, 18 project, 22 dual (= 92 total)', () => {
+  it('v1.10.0 scope counts: 12 self, 44 platform, 18 project, 26 dual (= 100 total)', () => {
     // Locks the v1.5.0 4-segment-allowed schema, v1.6.0 zeta additions
     // (14 project-scope perms), v1.7.0 muse additions (3 platform,
-    // -1 project, +15 dual), and v1.9.2 corrections (muse:author:delete
+    // -1 project, +15 dual), v1.9.2 corrections (muse:author:delete
     // moved from platform to dual = -3 platform, +3 dual; 3 new faq
-    // perms added to dual = +3 dual). If the contract grows or the
+    // perms added to dual = +3 dual), and v1.10.0 prometheus additions
+    // (4 platform-scope responses perms + 4 platform/project forms perms
+    // = +4 platform, +4 dual). If the contract grows or the
     // emitter starts bucketing incorrectly, this fails first.
     expect(SELF_PERMISSIONS).toHaveLength(12);
-    expect(PLATFORM_PERMISSIONS).toHaveLength(40);
+    expect(PLATFORM_PERMISSIONS).toHaveLength(44);
     expect(PROJECT_PERMISSIONS).toHaveLength(18);
-    expect(DUAL_PERMISSIONS).toHaveLength(22);
-    expect(Object.keys(PERM_SCOPE)).toHaveLength(92);
+    expect(DUAL_PERMISSIONS).toHaveLength(26);
+    expect(Object.keys(PERM_SCOPE)).toHaveLength(100);
     expect(
       SELF_PERMISSIONS.length +
         PLATFORM_PERMISSIONS.length +
@@ -352,6 +354,81 @@ describe('scope-partitioned tuples (v1.3.0)', () => {
       expect(seen.has(p)).toBe(false);
       seen.add(p);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v1.10.0 — Prometheus perm vocabulary
+// ---------------------------------------------------------------------------
+
+describe('Prometheus v1.10.0 perm distribution', () => {
+  it('OWNER has all 8 prometheus perms (incl. forms:delete)', () => {
+    const ownerPerms = ROLE_PERMISSIONS['OWNER'];
+    expect(ownerPerms).toContain('prometheus:forms:create');
+    expect(ownerPerms).toContain('prometheus:forms:read');
+    expect(ownerPerms).toContain('prometheus:forms:update');
+    expect(ownerPerms).toContain('prometheus:forms:delete');
+    expect(ownerPerms).toContain('prometheus:responses:read');
+    expect(ownerPerms).toContain('prometheus:responses:update');
+    expect(ownerPerms).toContain('prometheus:responses:delete');
+    expect(ownerPerms).toContain('prometheus:responses:analytics');
+  });
+
+  it('ADMIN has all 7 prometheus perms except forms:delete', () => {
+    const adminPerms = ROLE_PERMISSIONS['ADMIN'];
+    expect(adminPerms).toContain('prometheus:forms:create');
+    expect(adminPerms).toContain('prometheus:forms:read');
+    expect(adminPerms).toContain('prometheus:forms:update');
+    expect(adminPerms).not.toContain('prometheus:forms:delete'); // OWNER-only via role_permissions
+    expect(adminPerms).toContain('prometheus:responses:read');
+    expect(adminPerms).toContain('prometheus:responses:update');
+    expect(adminPerms).toContain('prometheus:responses:delete');
+    expect(adminPerms).toContain('prometheus:responses:analytics');
+  });
+
+  it('EDITOR has form CRUD + responses:read + analytics (not responses:update or responses:delete)', () => {
+    const editorPerms = ROLE_PERMISSIONS['EDITOR'];
+    expect(editorPerms).toContain('prometheus:forms:create');
+    expect(editorPerms).toContain('prometheus:forms:read');
+    expect(editorPerms).toContain('prometheus:forms:update');
+    expect(editorPerms).not.toContain('prometheus:forms:delete');
+    expect(editorPerms).toContain('prometheus:responses:read');
+    expect(editorPerms).not.toContain('prometheus:responses:update'); // platform-only, ADMIN+
+    expect(editorPerms).not.toContain('prometheus:responses:delete'); // platform-only, ADMIN+
+    expect(editorPerms).toContain('prometheus:responses:analytics');
+  });
+
+  it('VIEWER has only forms:read + responses:read', () => {
+    const viewerPerms = ROLE_PERMISSIONS['VIEWER'];
+    expect(viewerPerms).toContain('prometheus:forms:read');
+    expect(viewerPerms).toContain('prometheus:responses:read');
+    expect(viewerPerms).not.toContain('prometheus:forms:create');
+    expect(viewerPerms).not.toContain('prometheus:forms:update');
+    expect(viewerPerms).not.toContain('prometheus:forms:delete');
+    expect(viewerPerms).not.toContain('prometheus:responses:update');
+    expect(viewerPerms).not.toContain('prometheus:responses:delete');
+    expect(viewerPerms).not.toContain('prometheus:responses:analytics');
+  });
+
+  it('PERM_SCOPE reflects the 4-scope model for prometheus perms', () => {
+    expect(PERM_SCOPE['prometheus:forms:create']).toBe('platform/project');
+    expect(PERM_SCOPE['prometheus:forms:read']).toBe('platform/project');
+    expect(PERM_SCOPE['prometheus:forms:update']).toBe('platform/project');
+    expect(PERM_SCOPE['prometheus:forms:delete']).toBe('platform/project');
+    expect(PERM_SCOPE['prometheus:responses:read']).toBe('platform');
+    expect(PERM_SCOPE['prometheus:responses:update']).toBe('platform');
+    expect(PERM_SCOPE['prometheus:responses:delete']).toBe('platform');
+    expect(PERM_SCOPE['prometheus:responses:analytics']).toBe('platform');
+  });
+
+  it('prometheus:forms:delete is OWNER-only via role_permissions (not in owner_only_permissions helper)', () => {
+    // Per the v1.10.0 decision: forms:delete stays dual-track so it can be
+    // granted via TenantRole on the tenant path. The OWNER-only invariant
+    // is enforced via role_permissions (invariant 4 + subset checks).
+    expect(ROLE_PERMISSIONS['OWNER']).toContain('prometheus:forms:delete');
+    expect(ROLE_PERMISSIONS['ADMIN']).not.toContain('prometheus:forms:delete');
+    expect(ROLE_PERMISSIONS['EDITOR']).not.toContain('prometheus:forms:delete');
+    expect(ROLE_PERMISSIONS['VIEWER']).not.toContain('prometheus:forms:delete');
   });
 });
 
