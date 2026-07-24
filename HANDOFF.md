@@ -12,7 +12,7 @@
 | Tests | 22 passing on `permission-client.spec.ts` (includes 6 short-circuit tests). Plus 36 passing on `role-permissions.spec.ts` (v1.6.0 scope counts: 12 self / 40 platform / 19 project / 1 dual). Plus other SDK-covered suites. Pre-existing test failures on `helios-client.spec.ts` (HMAC vector mismatch) and `helios-event.invalidator.spec.ts` / `redis-permission-cache.spec.ts` (test infrastructure: missing peer deps) are unrelated to v0.7.0. |
 | Build | `tsc` clean, dist/ generated |
 | Typecheck | `tsc --noEmit` clean |
-| Contract version | `permission-contract@v1.6.0` (4-scope model + Mercury v1.5.0 expansion + Zeta v1.6.0) |
+| Contract version | `permission-contract@v1.7.0` (4-scope model + Mercury v1.5.0 + Zeta v1.6.0 + Muse v1.7.0) |
 
 ## v0.7.0 — universal-by-contract short-circuit
 
@@ -120,11 +120,11 @@ The `Permission` union and `ROLE_PERMISSIONS` map are **codegen'd** from
    `scripts/codegen-permissions.mjs` (both must match).
 4. CI runs `npm run codegen`, then `tsc --noEmit`, `eslint`, `jest`.
 
-Currently pinned to `permission-contract@v1.4.0`, which adds three
-`helios:external:*` permissions (register / revoke / view) for the
-Use case 2 ("tenant brings their own auth") flow. `register` and
-`revoke` are OWNER-only per the contract's `owner_only_permissions`
-invariant; `view` is OWNER+ADMIN.
+Currently pinned to `permission-contract@v1.7.0`, which adds 17 new
+`muse:*` permissions (blog update/delete, author update, tag/category/
+redirect CRUD, redirect analytics, posts:revert) and bumps
+`muse:posts:delete` from project to platform/project. `muse:blog:delete`
+is added to `owner_only_permissions`.
 
 ## Decisions locked
 
@@ -256,7 +256,7 @@ is implemented in helios as ZIN-4901e (`ServicePermissionsController`
 ```bash
 yarn install
 # Codegen requires network — fetches the contract from GitHub.
-PERMISSION_CONTRACT_VERSION=v1.6.0 yarn codegen
+PERMISSION_CONTRACT_VERSION=v1.7.0 yarn codegen
 yarn lint                 # eslint clean
 yarn typecheck            # tsc --noEmit clean
 yarn test                 # 22+36 pass on permission-client + role-permissions (other suites have pre-existing infrastructure failures)
