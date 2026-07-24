@@ -1,6 +1,6 @@
 {
   "name": "@wazobiatech/helios-permissions",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "TypeScript SDK for the Nexus permission contract — Redis-cached callerHasPermission, NestJS module, and event-driven cache invalidation. Role-permissions are codegen'd from wazobiatech/permission-contract.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

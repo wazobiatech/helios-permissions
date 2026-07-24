@@ -1,8 +1,8 @@
 // =============================================================================
 // AUTO-GENERATED — DO NOT EDIT.
 //
-// Source: permission-contract v1.10.0
-// Generated at: 2026-07-23
+// Source: permission-contract v1.11.0
+// Generated at: 2026-07-24
 // Regenerate via: node scripts/codegen-ts.mjs permissions.json > src/role-permissions.ts
 //
 // The Permission union, PERM_SCOPE map, and ROLE_PERMISSIONS map are derived
@@ -93,10 +93,6 @@ export const PLATFORM_PERMISSIONS = [
   'helios:external:register',
   'helios:external:revoke',
   'helios:external:view',
-  'prometheus:responses:read',
-  'prometheus:responses:update',
-  'prometheus:responses:delete',
-  'prometheus:responses:analytics',
 ] as const;
 
 /**
@@ -155,6 +151,10 @@ export const DUAL_PERMISSIONS = [
   'prometheus:forms:read',
   'prometheus:forms:update',
   'prometheus:forms:delete',
+  'prometheus:responses:read',
+  'prometheus:responses:update',
+  'prometheus:responses:delete',
+  'prometheus:responses:analytics',
 ] as const;
 
 /**
@@ -234,10 +234,6 @@ export const PERM_SCOPE: Record<Permission, PermScope> = {
   'helios:external:register': 'platform',
   'helios:external:revoke': 'platform',
   'helios:external:view': 'platform',
-  'prometheus:responses:read': 'platform',
-  'prometheus:responses:update': 'platform',
-  'prometheus:responses:delete': 'platform',
-  'prometheus:responses:analytics': 'platform',
   // project
   'muse:posts:read': 'project',
   'muse:posts:write': 'project',
@@ -284,6 +280,10 @@ export const PERM_SCOPE: Record<Permission, PermScope> = {
   'prometheus:forms:read': 'platform/project',
   'prometheus:forms:update': 'platform/project',
   'prometheus:forms:delete': 'platform/project',
+  'prometheus:responses:read': 'platform/project',
+  'prometheus:responses:update': 'platform/project',
+  'prometheus:responses:delete': 'platform/project',
+  'prometheus:responses:analytics': 'platform/project',
 };
 
 /** The four valid perm scopes. Mirrors the contract's `scope` enum. */

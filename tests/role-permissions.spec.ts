@@ -267,19 +267,21 @@ describe('PERM_SCOPE (v1.3.0 / v1.5.0)', () => {
 });
 
 describe('scope-partitioned tuples (v1.3.0)', () => {
-  it('v1.10.0 scope counts: 12 self, 44 platform, 18 project, 26 dual (= 100 total)', () => {
+  it('v1.11.0 scope counts: 12 self, 40 platform, 18 project, 30 dual (= 100 total)', () => {
     // Locks the v1.5.0 4-segment-allowed schema, v1.6.0 zeta additions
     // (14 project-scope perms), v1.7.0 muse additions (3 platform,
     // -1 project, +15 dual), v1.9.2 corrections (muse:author:delete
     // moved from platform to dual = -3 platform, +3 dual; 3 new faq
-    // perms added to dual = +3 dual), and v1.10.0 prometheus additions
+    // perms added to dual = +3 dual), v1.10.0 prometheus additions
     // (4 platform-scope responses perms + 4 platform/project forms perms
-    // = +4 platform, +4 dual). If the contract grows or the
+    // = +4 platform, +4 dual), and v1.11.0 promotion of the 4
+    // prometheus:responses:* perms from platform to platform/project
+    // (= -4 platform, +4 dual). If the contract grows or the
     // emitter starts bucketing incorrectly, this fails first.
     expect(SELF_PERMISSIONS).toHaveLength(12);
-    expect(PLATFORM_PERMISSIONS).toHaveLength(44);
+    expect(PLATFORM_PERMISSIONS).toHaveLength(40);
     expect(PROJECT_PERMISSIONS).toHaveLength(18);
-    expect(DUAL_PERMISSIONS).toHaveLength(26);
+    expect(DUAL_PERMISSIONS).toHaveLength(30);
     expect(Object.keys(PERM_SCOPE)).toHaveLength(100);
     expect(
       SELF_PERMISSIONS.length +
@@ -393,8 +395,8 @@ describe('Prometheus v1.10.0 perm distribution', () => {
     expect(editorPerms).toContain('prometheus:forms:update');
     expect(editorPerms).not.toContain('prometheus:forms:delete');
     expect(editorPerms).toContain('prometheus:responses:read');
-    expect(editorPerms).not.toContain('prometheus:responses:update'); // platform-only, ADMIN+
-    expect(editorPerms).not.toContain('prometheus:responses:delete'); // platform-only, ADMIN+
+    expect(editorPerms).not.toContain('prometheus:responses:update'); // role-permissions gated, ADMIN+ only
+    expect(editorPerms).not.toContain('prometheus:responses:delete'); // role-permissions gated, ADMIN+ only
     expect(editorPerms).toContain('prometheus:responses:analytics');
   });
 
@@ -415,10 +417,10 @@ describe('Prometheus v1.10.0 perm distribution', () => {
     expect(PERM_SCOPE['prometheus:forms:read']).toBe('platform/project');
     expect(PERM_SCOPE['prometheus:forms:update']).toBe('platform/project');
     expect(PERM_SCOPE['prometheus:forms:delete']).toBe('platform/project');
-    expect(PERM_SCOPE['prometheus:responses:read']).toBe('platform');
-    expect(PERM_SCOPE['prometheus:responses:update']).toBe('platform');
-    expect(PERM_SCOPE['prometheus:responses:delete']).toBe('platform');
-    expect(PERM_SCOPE['prometheus:responses:analytics']).toBe('platform');
+    expect(PERM_SCOPE['prometheus:responses:read']).toBe('platform/project');
+    expect(PERM_SCOPE['prometheus:responses:update']).toBe('platform/project');
+    expect(PERM_SCOPE['prometheus:responses:delete']).toBe('platform/project');
+    expect(PERM_SCOPE['prometheus:responses:analytics']).toBe('platform/project');
   });
 
   it('prometheus:forms:delete is OWNER-only via role_permissions (not in owner_only_permissions helper)', () => {
