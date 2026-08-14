@@ -2,7 +2,7 @@
 // AUTO-GENERATED — DO NOT EDIT.
 //
 // Source: permission-contract v1.11.0
-// Generated at: 2026-07-24
+// Generated at: 2026-08-14
 // Regenerate via: node scripts/codegen-ts.mjs permissions.json > src/role-permissions.ts
 //
 // The Permission union, PERM_SCOPE map, and ROLE_PERMISSIONS map are derived
@@ -78,10 +78,6 @@ export const PLATFORM_PERMISSIONS = [
   'mercury:auth_config_forgot_password:read',
   'mercury:connection_oauth:refresh',
   'mercury:events:consume',
-  'muse:blog:create',
-  'muse:blog:read',
-  'muse:blog:update',
-  'muse:blog:delete',
   'helios:tenant:transfer',
   'helios:members:view',
   'helios:members:invite',
@@ -125,6 +121,10 @@ export const PROJECT_PERMISSIONS = [
  * (ROLE_PERMISSIONS) or the tenant-user path (TenantRole bundle).
  */
 export const DUAL_PERMISSIONS = [
+  'muse:blog:create',
+  'muse:blog:read',
+  'muse:blog:update',
+  'muse:blog:delete',
   'muse:author:create',
   'muse:author:read',
   'muse:author:update',
@@ -219,10 +219,6 @@ export const PERM_SCOPE: Record<Permission, PermScope> = {
   'mercury:auth_config_forgot_password:read': 'platform',
   'mercury:connection_oauth:refresh': 'platform',
   'mercury:events:consume': 'platform',
-  'muse:blog:create': 'platform',
-  'muse:blog:read': 'platform',
-  'muse:blog:update': 'platform',
-  'muse:blog:delete': 'platform',
   'helios:tenant:transfer': 'platform',
   'helios:members:view': 'platform',
   'helios:members:invite': 'platform',
@@ -254,6 +250,10 @@ export const PERM_SCOPE: Record<Permission, PermScope> = {
   'zeta:team:manage': 'project',
   'zeta:tenant:configure': 'project',
   // platform/project
+  'muse:blog:create': 'platform/project',
+  'muse:blog:read': 'platform/project',
+  'muse:blog:update': 'platform/project',
+  'muse:blog:delete': 'platform/project',
   'muse:author:create': 'platform/project',
   'muse:author:read': 'platform/project',
   'muse:author:update': 'platform/project',
