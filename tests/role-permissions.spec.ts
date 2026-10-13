@@ -237,7 +237,7 @@ describe('PERM_SCOPE (v1.3.0 / v1.5.0)', () => {
     expect(PERM_SCOPE['mercury:connection_slack:revoke:self']).toBe('self'); // v1.5.0
 
     expect(PERM_SCOPE['athens:project:view']).toBe('platform');
-    expect(PERM_SCOPE['helios:tenant:transfer']).toBe('platform');
+    expect(PERM_SCOPE['helios:tenant:transfer']).toBe('platform/project'); // v1.12.0
     // v1.5.0: split api_keys:manage into create/revoke/read; manage is
     // OWNER-only deprecated umbrella.
     expect(PERM_SCOPE['mercury:api_keys:create']).toBe('platform');
@@ -267,7 +267,7 @@ describe('PERM_SCOPE (v1.3.0 / v1.5.0)', () => {
 });
 
 describe('scope-partitioned tuples (v1.3.0)', () => {
-  it('v1.11.1 scope counts: 12 self, 36 platform, 18 project, 34 dual (= 100 total)', () => {
+  it('v1.12.0 scope counts: 12 self, 25 platform, 18 project, 45 dual (= 100 total)', () => {
     // Locks the v1.5.0 4-segment-allowed schema, v1.6.0 zeta additions
     // (14 project-scope perms), v1.7.0 muse additions (3 platform,
     // -1 project, +15 dual), v1.9.2 corrections (muse:author:delete
@@ -278,12 +278,14 @@ describe('scope-partitioned tuples (v1.3.0)', () => {
     // prometheus:responses:* perms from platform to platform/project
     // (= -4 platform, +4 dual), and v1.11.1 promotion of the 4
     // muse:blog:* perms from platform to platform/project
-    // (= -4 platform, +4 dual). If the contract grows or the
+    // (= -4 platform, +4 dual), and v1.12.0 promotion of the 11
+    // helios:* perms from platform to platform/project
+    // (= -11 platform, +11 dual). If the contract grows or the
     // emitter starts bucketing incorrectly, this fails first.
     expect(SELF_PERMISSIONS).toHaveLength(12);
-    expect(PLATFORM_PERMISSIONS).toHaveLength(36);
+    expect(PLATFORM_PERMISSIONS).toHaveLength(25);
     expect(PROJECT_PERMISSIONS).toHaveLength(18);
-    expect(DUAL_PERMISSIONS).toHaveLength(34);
+    expect(DUAL_PERMISSIONS).toHaveLength(45);
     expect(Object.keys(PERM_SCOPE)).toHaveLength(100);
     expect(
       SELF_PERMISSIONS.length +
@@ -486,7 +488,12 @@ describe('isTenantGrantable', () => {
 
   it('returns false for platform-only perms (not grantable via TenantRole)', () => {
     expect(isTenantGrantable('athens:project:view' as Permission)).toBe(false);
-    expect(isTenantGrantable('helios:tenant:transfer' as Permission)).toBe(false);
+    expect(isTenantGrantable('mercury:api_keys:create' as Permission)).toBe(false);
+  });
+
+  it('returns true for helios:* perms (dual-scope since v1.12.0)', () => {
+    expect(isTenantGrantable('helios:tenant:transfer' as Permission)).toBe(true);
+    expect(isTenantGrantable('helios:roles:assign' as Permission)).toBe(true);
   });
 
   it('returns true for unknown perms (tenant-defined — default to tenant grantable)', () => {
