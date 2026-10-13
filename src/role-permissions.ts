@@ -1,8 +1,8 @@
 // =============================================================================
 // AUTO-GENERATED — DO NOT EDIT.
 //
-// Source: permission-contract v1.11.0
-// Generated at: 2026-08-14
+// Source: permission-contract v1.12.0
+// Generated at: 2026-10-13
 // Regenerate via: node scripts/codegen-ts.mjs permissions.json > src/role-permissions.ts
 //
 // The Permission union, PERM_SCOPE map, and ROLE_PERMISSIONS map are derived
@@ -78,17 +78,6 @@ export const PLATFORM_PERMISSIONS = [
   'mercury:auth_config_forgot_password:read',
   'mercury:connection_oauth:refresh',
   'mercury:events:consume',
-  'helios:tenant:transfer',
-  'helios:members:view',
-  'helios:members:invite',
-  'helios:members:remove',
-  'helios:roles:assign',
-  'helios:roles:revoke',
-  'helios:invitations:create',
-  'helios:invitations:revoke',
-  'helios:external:register',
-  'helios:external:revoke',
-  'helios:external:view',
 ] as const;
 
 /**
@@ -147,6 +136,17 @@ export const DUAL_PERMISSIONS = [
   'muse:faq:create',
   'muse:faq:update',
   'muse:faq:delete',
+  'helios:tenant:transfer',
+  'helios:members:view',
+  'helios:members:invite',
+  'helios:members:remove',
+  'helios:roles:assign',
+  'helios:roles:revoke',
+  'helios:invitations:create',
+  'helios:invitations:revoke',
+  'helios:external:register',
+  'helios:external:revoke',
+  'helios:external:view',
   'prometheus:forms:create',
   'prometheus:forms:read',
   'prometheus:forms:update',
@@ -219,17 +219,6 @@ export const PERM_SCOPE: Record<Permission, PermScope> = {
   'mercury:auth_config_forgot_password:read': 'platform',
   'mercury:connection_oauth:refresh': 'platform',
   'mercury:events:consume': 'platform',
-  'helios:tenant:transfer': 'platform',
-  'helios:members:view': 'platform',
-  'helios:members:invite': 'platform',
-  'helios:members:remove': 'platform',
-  'helios:roles:assign': 'platform',
-  'helios:roles:revoke': 'platform',
-  'helios:invitations:create': 'platform',
-  'helios:invitations:revoke': 'platform',
-  'helios:external:register': 'platform',
-  'helios:external:revoke': 'platform',
-  'helios:external:view': 'platform',
   // project
   'muse:posts:read': 'project',
   'muse:posts:write': 'project',
@@ -276,6 +265,17 @@ export const PERM_SCOPE: Record<Permission, PermScope> = {
   'muse:faq:create': 'platform/project',
   'muse:faq:update': 'platform/project',
   'muse:faq:delete': 'platform/project',
+  'helios:tenant:transfer': 'platform/project',
+  'helios:members:view': 'platform/project',
+  'helios:members:invite': 'platform/project',
+  'helios:members:remove': 'platform/project',
+  'helios:roles:assign': 'platform/project',
+  'helios:roles:revoke': 'platform/project',
+  'helios:invitations:create': 'platform/project',
+  'helios:invitations:revoke': 'platform/project',
+  'helios:external:register': 'platform/project',
+  'helios:external:revoke': 'platform/project',
+  'helios:external:view': 'platform/project',
   'prometheus:forms:create': 'platform/project',
   'prometheus:forms:read': 'platform/project',
   'prometheus:forms:update': 'platform/project',
